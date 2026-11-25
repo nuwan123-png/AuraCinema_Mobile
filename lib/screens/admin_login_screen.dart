@@ -17,7 +17,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   static const Color accentOrange = Color(0xFFFF9F1C);
 
   final AuthService _authService = AuthService();
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
   bool _isLoading = false;
@@ -32,7 +32,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -47,11 +47,13 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    final email = _emailController.text.trim();
+    final username = _usernameController.text.trim();
     final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      setState(() => _errorMessage = 'Email සහ Password දෙකම ඇතුළත් කරන්න.');
+    if (username.isEmpty || password.isEmpty) {
+      setState(
+        () => _errorMessage = 'Username සහ Password දෙකම ඇතුළත් කරන්න.',
+      );
       return;
     }
 
@@ -61,7 +63,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     });
 
     try {
-      await _authService.login(email: email, password: password);
+      await _authService.login(email: username, password: password);
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -109,8 +111,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.admin_panel_settings_rounded,
-                        color: accentOrange, size: 24),
+                    Icon(
+                      Icons.admin_panel_settings_rounded,
+                      color: accentOrange,
+                      size: 24,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       'AuraCinema Admin',
@@ -129,12 +134,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                 ),
                 const SizedBox(height: 18),
                 TextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _usernameController,
+                  keyboardType: TextInputType.text,
                   style: const TextStyle(color: Colors.white, fontSize: 13.5),
                   cursorColor: accentOrange,
                   decoration: InputDecoration(
-                    labelText: 'Email',
+                    labelText: 'Username',
                     labelStyle: const TextStyle(color: Colors.white60),
                     filled: true,
                     fillColor: chipBg,

@@ -21,7 +21,7 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
   final AuthService _authService = AuthService();
   final TextEditingController _searchController = TextEditingController();
 
-  List> _movies = [];
+  List<Map<String, dynamic>> _movies = [];
   bool _isLoading = true;
   String? _error;
 
@@ -65,7 +65,7 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
       );
 
       final rawList = res.data?['data'];
-      final List> items = [];
+      final List<Map<String, dynamic>> items = [];
 
       if (rawList is List) {
         for (final element in rawList) {
