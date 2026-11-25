@@ -70,9 +70,13 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         MaterialPageRoute(builder: (_) => const AdminMoviesScreen()),
       );
     } on DioException catch (e) {
+      final status = e.response?.statusCode;
       final serverMsg = e.response?.data is Map
-          ? (e.response?.data['message']?.toString() ?? 'Login අසාර්ථකයි.')
-          : 'Server එකට connect වෙන්න බැරි වුණා.';
+          ? (e.response?.data['message']?.toString() ??
+              'Login අසාර්ථකයි ($status).')
+          : (status != null
+              ? 'Server error ($status)'
+              : 'Server එකට connect වෙන්න බැරි වුණා.');
       if (!mounted) return;
       setState(() => _errorMessage = serverMsg);
     } catch (e) {

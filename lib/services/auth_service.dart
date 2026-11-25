@@ -1,26 +1,30 @@
-import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/api_client.dart';
 
 class AuthService {
-  static const _storage = FlutterSecureStorage();
-  static const _tokenKey = 'auracinema_admin_token';
+  static const String _tokenKey = 'admin_auth_token';
+  static const String laravelApiBase = 'https://auracinema.duckdns.org/api/v1';
+
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   Future<String> login({
     required String email,
     required String password,
   }) async {
-    final Response response = await ApiClient.dio.post(
-      '/auth/login',
+    final response = await ApiClient.dio.post(
+      '$laravelApiBase/auth/login',
       data: {
-        'email': email.trim(),
+        'email': email,
         'password': password,
       },
     );
 
-    final token = response.data?['token']?.toString() ?? '';
-    if (token.isEmpty) {
-      throw Exception('Token ලැබුණේ නෑ.');
+    final token = response.data is Map
+        ? response.data['token']?.toString()
+        : null;
+
+    if (token == null || token.isEmpty) {
+      throw Exception('Server එකෙන් valid token එකක් ලැබුණේ නෑ.');
     }
 
     await _storage.write(key: _tokenKey, value: token);
