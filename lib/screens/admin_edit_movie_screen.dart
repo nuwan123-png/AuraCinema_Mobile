@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../core/api_client.dart';
 import '../services/auth_service.dart';
 import 'admin_login_screen.dart';
@@ -26,8 +29,10 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
   static const Color badgeGreen = Color(0xFF10B981);
 
   final AuthService _authService = AuthService();
+  final ImagePicker _picker = ImagePicker();
 
   final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _imageUrlController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _trailerController = TextEditingController();
@@ -45,6 +50,10 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   String? _error;
+
+  File? _pickedPoster;
+  int? _pickedPosterBytes;
+  String? _existingPosterUrl;
 
   final List<String> _languages = [
     'Hindi',
@@ -89,6 +98,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
   @override
   void dispose() {
     _titleController.dispose();
+    _imageUrlController.dispose();
     _tagsController.dispose();
     _descriptionController.dispose();
     _trailerController.dispose();
@@ -120,6 +130,52 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
       MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
       (route) => route.isFirst,
     );
+  }
+
+  Future<void> _pickPosterFromGallery() async {
+    try {
+      final XFile? file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 650,
+        imageQuality: 78,
+      );
+      if (file == null) return;
+
+      final selectedFile = File(file.path);
+      final sizeBytes = await selectedFile.length();
+
+      if (!mounted) return;
+      setState(() {
+        _pickedPoster = selectedFile;
+        _pickedPosterBytes = sizeBytes;
+        _imageUrlController.clear();
+      });
+    } on MissingPluginException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'App එක Stop කරලා "flutter run" වලින් අලුතින් build කරන්න.',
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gallery open කරන්න බැරි වුණා: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  void _removePickedPoster() {
+    setState(() {
+      _pickedPoster = null;
+      _pickedPosterBytes = null;
+    });
   }
 
   Future<void> _fetchMovieDetails() async {
@@ -162,10 +218,20 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
         }
       }
 
+      final posterUrl = data['poster_url']?.toString().trim() ?? '';
+      final rawImage = data['image']?.toString().trim() ?? '';
+      String? resolvedPoster;
+      if (posterUrl.startsWith('http')) {
+        resolvedPoster = posterUrl;
+      } else if (rawImage.startsWith('http')) {
+        resolvedPoster = rawImage;
+      }
+
       if (!mounted) return;
       setState(() {
         _selectedType = normalizedType;
         _selectedLanguage = matchedLang;
+        _existingPosterUrl = resolvedPoster;
         _titleController.text =
             data['title']?.toString() ?? widget.initialTitle;
         _tagsController.text = data['tags']?.toString() ?? '';
@@ -248,24 +314,39 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
 
     try {
       final opts = await _authOptions();
-      await ApiClient.dio.put(
+
+      final Map<String, dynamic> fields = {
+        '_method': 'PUT',
+        'type': _selectedType,
+        'language': _selectedLanguage ?? '',
+        'title': title,
+        'tags': _tagsController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'trailer_embed_url': _trailerController.text.trim(),
+        'watch_with_sub': _watchWithSub ? '1' : '0',
+        'stream_url': _streamUrlController.text.trim(),
+        'embed_url': _embedUrlController.text.trim(),
+        'download_480p': _dl480Controller.text.trim(),
+        'download_720p': _dl720Controller.text.trim(),
+        'download_1080p': _dl1080Controller.text.trim(),
+        'telegram_url': _telegramController.text.trim(),
+        'subtitle_url': _subtitleController.text.trim(),
+      };
+
+      if (_pickedPoster != null) {
+        final rawName = _pickedPoster!.path.split(Platform.pathSeparator).last;
+        fields['image'] = await MultipartFile.fromFile(
+          _pickedPoster!.path,
+          filename: rawName.isNotEmpty ? rawName : 'poster.jpg',
+        );
+      } else if (_imageUrlController.text.trim().isNotEmpty) {
+        fields['image_url'] = _imageUrlController.text.trim();
+      }
+
+      // Send via POST + _method=PUT so PHP/Laravel handles multipart image files cleanly
+      await ApiClient.dio.post(
         '${AuthService.laravelApiBase}/admin/movies/${widget.movieId}',
-        data: {
-          'type': _selectedType,
-          'language': _selectedLanguage,
-          'title': title,
-          'tags': _tagsController.text.trim(),
-          'description': _descriptionController.text.trim(),
-          'trailer_embed_url': _trailerController.text.trim(),
-          'watch_with_sub': _watchWithSub,
-          'stream_url': _streamUrlController.text.trim(),
-          'embed_url': _embedUrlController.text.trim(),
-          'download_480p': _dl480Controller.text.trim(),
-          'download_720p': _dl720Controller.text.trim(),
-          'download_1080p': _dl1080Controller.text.trim(),
-          'telegram_url': _telegramController.text.trim(),
-          'subtitle_url': _subtitleController.text.trim(),
-        },
+        data: FormData.fromMap(fields),
         options: opts,
       );
 
@@ -303,6 +384,198 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Widget _buildPosterSection() {
+    final urlPreview = _imageUrlController.text.trim();
+    final sizeKb = _pickedPosterBytes != null
+        ? (_pickedPosterBytes! / 1024).toStringAsFixed(0)
+        : null;
+
+    Widget previewChild;
+    if (_pickedPoster != null) {
+      previewChild = Image.file(_pickedPoster!, fit: BoxFit.cover);
+    } else if (urlPreview.startsWith('http')) {
+      previewChild = Image.network(
+        urlPreview,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.broken_image_outlined, color: Colors.white30),
+        ),
+      );
+    } else if (_existingPosterUrl != null && _existingPosterUrl!.isNotEmpty) {
+      previewChild = Image.network(
+        _existingPosterUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Center(
+          child: Icon(Icons.movie_creation_outlined, color: Colors.white24),
+        ),
+      );
+    } else {
+      previewChild = const Center(
+        child: Icon(
+          Icons.movie_creation_outlined,
+          color: Colors.white24,
+          size: 28,
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: chipBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.image_rounded, color: accentOrange, size: 18),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Movie Poster',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (sizeKb != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: badgeGreen.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: badgeGreen.withOpacity(0.4)),
+                  ),
+                  child: Text(
+                    '$sizeKb KB • Fast Upload',
+                    style: const TextStyle(
+                      color: badgeGreen,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 82,
+                  height: 118,
+                  color: surfaceDark,
+                  child: previewChild,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentOrange,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: _isSaving ? null : _pickPosterFromGallery,
+                      icon: const Icon(Icons.photo_library_rounded, size: 18),
+                      label: Text(
+                        _pickedPoster != null
+                            ? 'Change Poster'
+                            : 'Gallery එකෙන් තෝරන්න',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if (_pickedPoster != null) ...[
+                      const SizedBox(height: 6),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Colors.redAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _isSaving ? null : _removePickedPoster,
+                        icon:
+                            const Icon(Icons.delete_outline_rounded, size: 16),
+                        label: const Text(
+                          'Remove Selected',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'අලුත් poster එකක් තෝරලා Save කළාම auto-compress වෙලා update වේ.',
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (_pickedPoster == null) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _imageUrlController,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(color: Colors.white, fontSize: 12.5),
+              cursorColor: accentOrange,
+              decoration: InputDecoration(
+                labelText: 'හෝ අලුත් Poster Image URL (Optional)',
+                hintText: 'https://...',
+                labelStyle:
+                    const TextStyle(color: Colors.white54, fontSize: 12),
+                hintStyle:
+                    const TextStyle(color: Colors.white24, fontSize: 12),
+                isDense: true,
+                filled: true,
+                fillColor: surfaceDark,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.white12),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Colors.white12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: accentOrange),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildField({
@@ -415,7 +688,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Basic Info & Keywords',
+                              'Basic Info & Poster',
                               style: TextStyle(
                                 color: accentOrange,
                                 fontSize: 13.5,
@@ -423,6 +696,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                               ),
                             ),
                             const SizedBox(height: 12),
+                            _buildPosterSection(),
                             DropdownButtonFormField<String>(
                               value: _selectedType,
                               dropdownColor: surfaceDark,
@@ -676,7 +950,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                                 )
                               : const Icon(Icons.save_rounded, size: 20),
                           label: Text(
-                            _isSaving ? 'Updating...' : 'Update Title & Keywords',
+                            _isSaving ? 'Updating...' : 'Update Movie',
                             style: const TextStyle(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w800,
