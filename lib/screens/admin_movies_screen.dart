@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../services/auth_service.dart';
+import 'admin_add_movie_screen.dart';
 import 'admin_edit_movie_screen.dart';
 import 'admin_login_screen.dart';
 
@@ -108,6 +109,18 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
     }
   }
 
+  Future<void> _openAddMovie() async {
+    final added = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute<bool>(
+        builder: (_) => const AdminAddMovieScreen(),
+      ),
+    );
+    if (added == true) {
+      _fetchAdminMovies();
+    }
+  }
+
   Future<void> _logout() async {
     await _authService.logout();
     if (!mounted) return;
@@ -130,11 +143,27 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Add Movie',
+            icon: const Icon(Icons.add_circle_outline_rounded,
+                color: accentOrange),
+            onPressed: _openAddMovie,
+          ),
+          IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout_rounded, color: accentOrange),
             onPressed: _logout,
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: accentOrange,
+        foregroundColor: Colors.black,
+        onPressed: _openAddMovie,
+        icon: const Icon(Icons.add_rounded, size: 22),
+        label: const Text(
+          'Add Movie',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
       ),
       body: Column(
         children: [
@@ -205,7 +234,7 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
                         backgroundColor: surfaceDark,
                         onRefresh: _fetchAdminMovies,
                         child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
                           itemCount: _movies.length,
                           separatorBuilder: (context, index) =>
                               const SizedBox(height: 10),
@@ -215,7 +244,11 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
                             final title = m['title']?.toString() ?? 'Untitled';
                             final type = (m['type']?.toString() ?? 'movie')
                                 .toUpperCase();
+                            final lang = m['language']?.toString().trim() ?? '';
                             final tags = m['tags']?.toString() ?? '';
+
+                            final metaPrefix =
+                                lang.isNotEmpty ? '$type • $lang' : type;
 
                             return Container(
                               padding: const EdgeInsets.all(12),
@@ -244,12 +277,12 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
                                         const SizedBox(height: 4),
                                         Text(
                                           tags.isEmpty
-                                              ? '$type • Keywords නෑ'
-                                              : '$type • Keywords: $tags',
+                                              ? '$metaPrefix • Keywords නෑ'
+                                              : '$metaPrefix • Keywords: $tags',
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                            color: tags.isEmpty
+                                            color: tags.isEmpty && lang.isEmpty
                                                 ? Colors.white38
                                                 : accentOrange,
                                             fontSize: 11.5,
