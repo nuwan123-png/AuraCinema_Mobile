@@ -130,6 +130,70 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
     );
   }
 
+  void _showMissingFieldsDialog(String title, List<String> missing) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: surfaceDark,
+        title: Row(
+          children: const [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFFB7185)),
+            SizedBox(width: 8),
+            Text('Incomplete', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'තාම empty:',
+              style: TextStyle(color: Colors.white38, fontSize: 11.5),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: missing
+                  .map((f) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE11D48).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          f,
+                          style: const TextStyle(
+                            color: Color(0xFFFB7185),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close', style: TextStyle(color: accentOrange)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -246,6 +310,11 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
                                 .toUpperCase();
                             final lang = m['language']?.toString().trim() ?? '';
                             final tags = m['tags']?.toString() ?? '';
+                            final missing = (m['missing_fields'] is List)
+                                ? (m['missing_fields'] as List)
+                                    .map((e) => e.toString())
+                                    .toList()
+                                : <String>[];
 
                             final metaPrefix =
                                 lang.isNotEmpty ? '$type • $lang' : type;
@@ -288,6 +357,57 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
                                             fontSize: 11.5,
                                           ),
                                         ),
+                                        if (missing.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          GestureDetector(
+                                            onTap: () =>
+                                                _showMissingFieldsDialog(
+                                              title,
+                                              missing,
+                                            ),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 4,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFE11D48)
+                                                    .withOpacity(0.18),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color:
+                                                      const Color(0xFFE11D48),
+                                                ),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize:
+                                                    MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons
+                                                        .warning_amber_rounded,
+                                                    size: 13,
+                                                    color: Color(0xFFFB7185),
+                                                  ),
+                                                  SizedBox(width: 4),
+                                                  Text(
+                                                    'INCOMPLETE',
+                                                    style: TextStyle(
+                                                      color:
+                                                          Color(0xFFFB7185),
+                                                      fontSize: 10.5,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      letterSpacing: 0.3,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/movie_model.dart';
 import '../services/movie_service.dart';
+import '../widgets/cached_poster.dart';
 import 'admin_login_screen.dart';
 import 'movie_detail_screen.dart';
 import 'video_player_screen.dart';
@@ -24,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // ඔයාගේ WhatsApp අංකය සහ R2 Tutorial Video URL එක මෙතනින් වෙනස් කරගන්න පුළුවන්
   static const String _whatsappPhone = '94788402670';
   static const String _tutorialVideoUrl =
-      'https://pub-63df71478cdb4786a59eae41e51254b1.r2.dev/tutorial.mp4';
+      'https://pub-63df71478cdb4786a59eae41e51254b1.r2.dev/gallery/tutorial.mp4';
   static const int _pageSize = 9;
   static bool _hasShownNotice = false;
 
@@ -33,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Movie> _latestMovies = [];
   List<Movie> _heroMovies = [];
   List<Movie> _subMovies = [];
+  List<Movie> _incompleteMovies = [];
   List<Movie> _filteredMovies = [];
 
   bool _isLoading = true;
@@ -159,22 +161,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.network(
-                          'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Color(0xFF4A1026),
-                                  Color(0xFF1F1228),
-                                  Color(0xFF13131A),
-                                ],
-                              ),
-                            ),
-                          ),
+                        const CachedPoster(
+                          imageUrl:
+                              'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80',
+                          memCacheWidth: 700,
                         ),
                         DecoratedBox(
                           decoration: BoxDecoration(
@@ -219,7 +209,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Header Badge
                         Row(
                           children: [
                             Container(
@@ -243,8 +232,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                         const SizedBox(height: 14),
-
-                        // Text Card 1
                         Container(
                           padding: const EdgeInsets.all(13),
                           decoration: BoxDecoration(
@@ -279,8 +266,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
-
-                        // Text Card 2
                         Container(
                           padding: const EdgeInsets.all(13),
                           decoration: BoxDecoration(
@@ -315,8 +300,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 18),
-
-                        // Action Buttons: Tutorial & Request
                         Row(
                           children: [
                             Expanded(
@@ -466,6 +449,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final results = await Future.wait([
         _movieService.getHomeData(),
         _movieService.getMovies().catchError((_) => null),
+        _movieService.getIncompleteMovies().catchError((_) => <dynamic>[]),
       ]);
 
       final data = results[0];
@@ -473,10 +457,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final latest = _parseMovieList(map['latestMovies'] ?? map['movies']);
       final allFromEndpoint = _extractMoviesFromResponse(results[1]) ?? [];
+      final incompleteFromLaravel = _parseMovieList(results[2]);
+      final incompleteFromHome = _parseMovieList(
+        map['withTrailers'] ?? map['incompleteMovies'] ?? map['incomplete'],
+      );
 
       final mergedMap = <int, Movie>{
         for (final m in allFromEndpoint) m.id: m,
         for (final m in latest) m.id: m,
+        for (final m in incompleteFromLaravel) m.id: m,
       };
       final combinedAll = _sortByAddedOrder(mergedMap.values.toList());
 
@@ -489,6 +478,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ? subRaw
           : combinedAll.where((m) => m.watchWithSub).toList();
 
+      final incompleteList = incompleteFromLaravel.isNotEmpty
+          ? incompleteFromLaravel
+          : (incompleteFromHome.isNotEmpty
+              ? incompleteFromHome
+              : combinedAll.where((m) => m.isIncomplete).take(20).toList());
+
       if (!mounted) return;
       setState(() {
         _allMovies = combinedAll;
@@ -497,6 +492,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _heroMovies = heroes;
         _subMovies =
             subList.isNotEmpty ? subList : combinedAll.reversed.toList();
+        _incompleteMovies = incompleteList;
         _filteredMovies = _filterStrict(combinedAll);
         _currentPage = 1;
         _heroIndex = 0;
@@ -962,6 +958,33 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _openTrailer(Movie movie) async {
+    final directVideo = movie.fullTrailerVideoUrl;
+    if (directVideo != null && directVideo.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VideoPlayerScreen(
+            title: '${movie.title} - Trailer',
+            videoUrl: directVideo,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final ytUrl = movie.playableTrailerYoutubeUrl;
+    if (ytUrl != null && ytUrl.isNotEmpty) {
+      final uri = Uri.tryParse(ytUrl);
+      if (uri != null) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    }
+
+    _openDetail(movie);
+  }
+
   Widget _buildLanguageChips() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
@@ -1030,11 +1053,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(
-                        m.fullImageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            Container(color: surfaceDark),
+                      CachedPoster(
+                        imageUrl: m.fullImageUrl,
+                        memCacheWidth: 700,
                       ),
                       DecoratedBox(
                         decoration: BoxDecoration(
@@ -1053,18 +1074,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.all(14),
                         child: Row(
                           children: [
-                            ClipRRect(
+                            CachedPoster(
+                              imageUrl: m.fullImageUrl,
+                              width: 92,
+                              height: double.infinity,
+                              memCacheWidth: 320,
                               borderRadius: BorderRadius.circular(10),
-                              child: Image.network(
-                                m.fullImageUrl,
-                                width: 92,
-                                height: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                  width: 92,
-                                  color: chipBg,
-                                ),
-                              ),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -1222,6 +1237,67 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildIncompleteTrailersSection() {
+    if (_incompleteMovies.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.movie_filter_rounded,
+                color: Color(0xFFF97316),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Watch the Trailers',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '(ළඟදීම)',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 248,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _incompleteMovies.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final m = _incompleteMovies[index];
+              return SizedBox(
+                width: 144,
+                child: _IncompleteMovieCard(
+                  movie: m,
+                  onTapCard: () => _openDetail(m),
+                  onTapTrailer: () => _openTrailer(m),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildPaginationBar(int safePage, int totalPages) {
     if (totalPages <= 1) return const SizedBox.shrink();
 
@@ -1350,7 +1426,7 @@ class _HomeScreenState extends State<HomeScreen> {
               title: Row(
                 children: [
                   GestureDetector(
-                   onTap: () {
+                    onTap: () {
                       _goHome();
                       _showAuraNoticePopup();
                     },
@@ -1596,11 +1672,14 @@ class _HomeScreenState extends State<HomeScreen> {
               if (!_isInSpecificCategory && !hasSearchQuery) ...[
                 SliverToBoxAdapter(child: _buildHeroCarousel()),
                 SliverToBoxAdapter(
-                  child:
-                      _buildHorizontalSection('New on AuraCinema', _latestMovies),
+                  child: _buildHorizontalSection(
+                      'New on AuraCinema', _latestMovies),
                 ),
                 SliverToBoxAdapter(
                   child: _buildHorizontalSection('Watch with sub', _subMovies),
+                ),
+                SliverToBoxAdapter(
+                  child: _buildIncompleteTrailersSection(),
                 ),
               ],
               SliverToBoxAdapter(
@@ -1716,6 +1795,266 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+class _IncompleteMovieCard extends StatefulWidget {
+  final Movie movie;
+  final VoidCallback onTapCard;
+  final VoidCallback onTapTrailer;
+
+  const _IncompleteMovieCard({
+    required this.movie,
+    required this.onTapCard,
+    required this.onTapTrailer,
+  });
+
+  @override
+  State<_IncompleteMovieCard> createState() => _IncompleteMovieCardState();
+}
+
+class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const borderOrange = Color(0xFFF97316);
+    const badgeCrimson = Color(0xFFE11D48);
+
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      onTap: widget.onTapCard,
+      child: AnimatedScale(
+        scale: _isPressed ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14141B),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: borderOrange, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: borderOrange.withOpacity(0.18),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(11.5),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CachedPoster(
+                        imageUrl: widget.movie.fullImageUrl,
+                        memCacheWidth: 340,
+                      ),
+                      Container(
+                        color: Colors.black.withOpacity(0.68),
+                      ),
+                      if (widget.movie.episodesCount > 0)
+                        Positioned(
+                          top: 7,
+                          left: 7,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.75),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Text(
+                              '${widget.movie.episodesCount} EPS',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 22),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: const BoxDecoration(
+                                  color: borderOrange,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.access_time_filled_rounded,
+                                  color: Colors.black,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'මෙම චිත්‍රපටය තවම\nඅප්ලෝඩ් කර නැත',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 7,
+                        right: 7,
+                        bottom: 7,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  widget.movie.displayYear,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Text(
+                                  ' • ',
+                                  style: TextStyle(
+                                    color: borderOrange,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (widget.movie.hasTrailer)
+                                  Expanded(
+                                    child: GestureDetector(
+                                      onTap: widget.onTapTrailer,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 7,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF18181F),
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: Colors.white24,
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.videocam_rounded,
+                                              color: borderOrange,
+                                              size: 11,
+                                            ),
+                                            SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                'Trailer',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 9.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Expanded(
+                                    child: Text(
+                                      widget.movie.type.toUpperCase(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: borderOrange,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 4.5),
+                              decoration: BoxDecoration(
+                                color: badgeCrimson,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.warning_rounded,
+                                    color: Colors.white,
+                                    size: 11,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'INCOMPLETE',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              widget.movie.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFFDBA74),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MovieCard extends StatefulWidget {
   final Movie movie;
   const _MovieCard({required this.movie});
@@ -1760,16 +2099,9 @@ class _MovieCardState extends State<_MovieCard> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(
-                        widget.movie.fullImageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Center(
-                          child: Icon(
-                            Icons.movie_creation_outlined,
-                            color: Colors.white24,
-                            size: 28,
-                          ),
-                        ),
+                      CachedPoster(
+                        imageUrl: widget.movie.fullImageUrl,
+                        memCacheWidth: 320,
                       ),
                       Positioned.fill(
                         child: DecoratedBox(

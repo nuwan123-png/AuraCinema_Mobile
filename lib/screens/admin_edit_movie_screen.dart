@@ -49,6 +49,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
   bool _watchWithSub = false;
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isDeleting = false;
   String? _error;
 
   File? _pickedPoster;
@@ -343,7 +344,6 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
         fields['image_url'] = _imageUrlController.text.trim();
       }
 
-      // Send via POST + _method=PUT so PHP/Laravel handles multipart image files cleanly
       await ApiClient.dio.post(
         '${AuthService.laravelApiBase}/admin/movies/${widget.movieId}',
         data: FormData.fromMap(fields),
@@ -386,7 +386,117 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
     }
   }
 
+  Future<void> _confirmAndDeleteMovie() async {
+    final movieTitle = _titleController.text.trim().isNotEmpty
+        ? _titleController.text.trim()
+        : widget.initialTitle;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: surfaceDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 22),
+            SizedBox(width: 8),
+            Text(
+              'Movie එක Delete කරන්නද?',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          '“$movieTitle” සහ එහි poster / episodes ස්ථිරවම delete වේ. මේක ආපහු ගන්න බෑ.',
+          style: const TextStyle(color: Colors.white70, fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white60),
+            ),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.delete_forever_rounded, size: 18),
+            label: const Text(
+              'Delete',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteMovie();
+    }
+  }
+
+  Future<void> _deleteMovie() async {
+    setState(() => _isDeleting = true);
+
+    try {
+      final opts = await _authOptions();
+      await ApiClient.dio.delete(
+        '${AuthService.laravelApiBase}/admin/movies/${widget.movieId}',
+        options: opts,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Movie එක සාර්ථකව Delete වුණා!'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      Navigator.pop(context, true);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        await _handleUnauthorized();
+        return;
+      }
+      final msg = e.response?.data is Map
+          ? (e.response?.data['message']?.toString() ?? 'Delete අසාර්ථකයි.')
+          : 'Delete කරන්න බැරි වුණා (${e.response?.statusCode ?? 'Error'}).';
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
   Widget _buildPosterSection() {
+    final busy = _isSaving || _isDeleting;
     final urlPreview = _imageUrlController.text.trim();
     final sizeKb = _pickedPosterBytes != null
         ? (_pickedPosterBytes! / 1024).toStringAsFixed(0)
@@ -495,7 +605,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      onPressed: _isSaving ? null : _pickPosterFromGallery,
+                      onPressed: busy ? null : _pickPosterFromGallery,
                       icon: const Icon(Icons.photo_library_rounded, size: 18),
                       label: Text(
                         _pickedPoster != null
@@ -518,7 +628,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        onPressed: _isSaving ? null : _removePickedPoster,
+                        onPressed: busy ? null : _removePickedPoster,
                         icon:
                             const Icon(Icons.delete_outline_rounded, size: 16),
                         label: const Text(
@@ -619,6 +729,8 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final busy = _isSaving || _isDeleting;
+
     return Scaffold(
       backgroundColor: bgDark,
       appBar: AppBar(
@@ -631,7 +743,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
         actions: [
           if (!_isLoading && _error == null)
             TextButton.icon(
-              onPressed: _isSaving ? null : _saveChanges,
+              onPressed: busy ? null : _saveChanges,
               icon: const Icon(Icons.check_rounded, color: accentOrange),
               label: const Text(
                 'Save',
@@ -938,7 +1050,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: _isSaving ? null : _saveChanges,
+                          onPressed: busy ? null : _saveChanges,
                           icon: _isSaving
                               ? const SizedBox(
                                   width: 18,
@@ -951,6 +1063,44 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                               : const Icon(Icons.save_rounded, size: 20),
                           label: Text(
                             _isSaving ? 'Updating...' : 'Update Movie',
+                            style: const TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            side: const BorderSide(
+                              color: Colors.redAccent,
+                              width: 1.4,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: busy ? null : _confirmAndDeleteMovie,
+                          icon: _isDeleting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.redAccent,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.delete_forever_rounded,
+                                  size: 20,
+                                ),
+                          label: Text(
+                            _isDeleting ? 'Deleting...' : 'Delete Movie',
                             style: const TextStyle(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w800,

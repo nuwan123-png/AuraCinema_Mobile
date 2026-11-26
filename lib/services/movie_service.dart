@@ -1,9 +1,22 @@
 import '../core/api_client.dart';
+import 'auth_service.dart';
 
 class MovieService {
   Future<dynamic> getHomeData() async {
     final response = await ApiClient.dio.get('/home');
     return response.data;
+  }
+
+  Future<List<dynamic>> getIncompleteMovies() async {
+    final response = await ApiClient.dio.get(
+      '${AuthService.laravelApiBase}/incomplete',
+    );
+    final data = response.data;
+    if (data is List) return data;
+    if (data is Map && data['data'] is List) {
+      return data['data'] as List<dynamic>;
+    }
+    return [];
   }
 
   Future<dynamic> getMovies({
