@@ -7,7 +7,55 @@ class MovieService {
   }
 
   Future<dynamic> getMovies({
-    int page = 1,
+    int? page,
+    String? q,
+    String? type,
+    String? genre,
+    String? year,
+    String? language,
+    String? tag,
+  }) async {
+    // නිශ්චිත page එකක් ඉල්ලුවොත් ඒ page එක විතරක් ගන්න
+    if (page != null) {
+      return _fetchMoviesPage(
+        page: page,
+        q: q,
+        type: type,
+        genre: genre,
+        year: year,
+        language: language,
+        tag: tag,
+      );
+    }
+
+    // page එකක් දීලා නැත්නම්, API එකේ තියෙන ඔක්කොම pages (20 බැගින්) load කරගන්න
+    final allItems = <dynamic>[];
+    const int pageSize = 20;
+    const int maxPages = 30; // .NET API එකේ 60 req/min rate limit එකට හසු නොවී තබා ගැනීමට
+
+    for (int currentPage = 1; currentPage <= maxPages; currentPage++) {
+      final chunk = await _fetchMoviesPage(
+        page: currentPage,
+        q: q,
+        type: type,
+        genre: genre,
+        year: year,
+        language: language,
+        tag: tag,
+      );
+
+      if (chunk.isEmpty) break;
+      allItems.addAll(chunk);
+
+      // 20කට වඩා අඩුවෙන් ආවොත් එතනින් අන්තිම page එක ඉවරයි
+      if (chunk.length < pageSize) break;
+    }
+
+    return allItems;
+  }
+
+  Future<List<dynamic>> _fetchMoviesPage({
+    required int page,
     String? q,
     String? type,
     String? genre,
@@ -29,7 +77,14 @@ class MovieService {
       '/movies',
       queryParameters: params,
     );
-    return response.data;
+
+    final data = response.data;
+    if (data is List) return data;
+    if (data is Map) {
+      final list = data['data'] ?? data['movies'] ?? data['latestMovies'];
+      if (list is List) return list;
+    }
+    return [];
   }
 
   Future<dynamic> getMovieDetails(dynamic id) async {

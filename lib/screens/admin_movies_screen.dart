@@ -56,7 +56,7 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
     try {
       final opts = await _authOptions();
       final res = await ApiClient.dio.get(
-        '/admin/movies',
+        '${AuthService.laravelApiBase}/admin/movies',
         queryParameters: {
           if (_searchController.text.trim().isNotEmpty)
             'q': _searchController.text.trim(),
@@ -90,9 +90,13 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
         );
         return;
       }
+      final serverMsg = e.response?.data is Map
+          ? e.response?.data['message']?.toString()
+          : null;
       if (!mounted) return;
       setState(() {
-        _error = e.message ?? 'Movies load කරන්න බැරි වුණා.';
+        _error = serverMsg ??
+            'Error ${e.response?.statusCode ?? ''}: ${e.requestOptions.uri}';
         _isLoading = false;
       });
     } catch (e) {
@@ -173,9 +177,27 @@ class _AdminMoviesScreenState extends State<AdminMoviesScreen> {
                   )
                 : _error != null
                     ? Center(
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.white60),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _error!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white60),
+                              ),
+                              const SizedBox(height: 12),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accentOrange,
+                                  foregroundColor: Colors.black,
+                                ),
+                                onPressed: _fetchAdminMovies,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
                         ),
                       )
                     : RefreshIndicator(

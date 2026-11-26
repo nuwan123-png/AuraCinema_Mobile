@@ -40,10 +40,25 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
   final TextEditingController _subtitleController = TextEditingController();
 
   String _selectedType = 'movie';
+  String? _selectedLanguage;
   bool _watchWithSub = false;
   bool _isLoading = true;
   bool _isSaving = false;
   String? _error;
+
+  final List<String> _languages = [
+    'Hindi',
+    'Tamil',
+    'Malayalam',
+    'Telugu',
+    'Kannada',
+    'English',
+    'Sinhala',
+    'Korean',
+    'Japanese',
+    'Chinese',
+    'Other',
+  ];
 
   final List<String> _quickKeywords = [
     'Hindi',
@@ -133,9 +148,24 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
         normalizedType = 'anime';
       }
 
+      final rawLang = data['language']?.toString().trim() ?? '';
+      String? matchedLang;
+      if (rawLang.isNotEmpty) {
+        final idx = _languages.indexWhere(
+          (l) => l.toLowerCase() == rawLang.toLowerCase(),
+        );
+        if (idx >= 0) {
+          matchedLang = _languages[idx];
+        } else {
+          _languages.add(rawLang);
+          matchedLang = rawLang;
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _selectedType = normalizedType;
+        _selectedLanguage = matchedLang;
         _titleController.text =
             data['title']?.toString() ?? widget.initialTitle;
         _tagsController.text = data['tags']?.toString() ?? '';
@@ -222,6 +252,7 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
         '${AuthService.laravelApiBase}/admin/movies/${widget.movieId}',
         data: {
           'type': _selectedType,
+          'language': _selectedLanguage,
           'title': title,
           'tags': _tagsController.text.trim(),
           'description': _descriptionController.text.trim(),
@@ -436,6 +467,52 @@ class _AdminEditMovieScreenState extends State<AdminEditMovieScreen> {
                                 if (val != null) {
                                   setState(() => _selectedType = val);
                                 }
+                              },
+                            ),
+                            const SizedBox(height: 14),
+                            DropdownButtonFormField<String?>(
+                              value: _selectedLanguage,
+                              dropdownColor: surfaceDark,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13.5,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Language',
+                                labelStyle: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 13,
+                                ),
+                                filled: true,
+                                fillColor: chipBg,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide:
+                                      const BorderSide(color: Colors.white12),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide:
+                                      const BorderSide(color: Colors.white12),
+                                ),
+                              ),
+                              items: [
+                                const DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text(
+                                    'Select Language (Optional)',
+                                    style: TextStyle(color: Colors.white54),
+                                  ),
+                                ),
+                                ..._languages.map(
+                                  (lang) => DropdownMenuItem<String?>(
+                                    value: lang,
+                                    child: Text(lang),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                setState(() => _selectedLanguage = val);
                               },
                             ),
                             const SizedBox(height: 14),

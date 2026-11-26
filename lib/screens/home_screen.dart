@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/movie_model.dart';
 import '../services/movie_service.dart';
 import 'admin_login_screen.dart';
 import 'movie_detail_screen.dart';
+import 'video_player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,11 +21,16 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   final PageController _heroController = PageController();
 
-  static const String _whatsappPhone = '94700000000';
+  // ඔයාගේ WhatsApp අංකය සහ R2 Tutorial Video URL එක මෙතනින් වෙනස් කරගන්න පුළුවන්
+  static const String _whatsappPhone = '94788402670';
+  static const String _tutorialVideoUrl =
+      'https://pub-63df71478cdb4786a59eae41e51254b1.r2.dev/tutorial.mp4';
   static const int _pageSize = 9;
+  static bool _hasShownNotice = false;
 
   Timer? _heroTimer;
   List<Movie> _allMovies = [];
+  List<Movie> _latestMovies = [];
   List<Movie> _heroMovies = [];
   List<Movie> _subMovies = [];
   List<Movie> _filteredMovies = [];
@@ -100,6 +107,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadHomeData();
     _startHeroAutoSlide();
+
+    if (!_hasShownNotice) {
+      _hasShownNotice = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showAuraNoticePopup();
+      });
+    }
   }
 
   @override
@@ -108,6 +122,285 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.dispose();
     _heroController.dispose();
     super.dispose();
+  }
+
+  void _showAuraNoticePopup() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.78),
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 420),
+            decoration: BoxDecoration(
+              color: const Color(0xFF13131A),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.65),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(19),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Top Banner Image + Close (X) Button
+                  SizedBox(
+                    height: 120,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80',
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Color(0xFF4A1026),
+                                  Color(0xFF1F1228),
+                                  Color(0xFF13131A),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withOpacity(0.25),
+                                const Color(0xFF13131A).withOpacity(0.72),
+                                const Color(0xFF13131A),
+                              ],
+                              stops: const [0.0, 0.68, 1.0],
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Material(
+                            color: Colors.black.withOpacity(0.6),
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: () => Navigator.pop(ctx),
+                              child: const Padding(
+                                padding: EdgeInsets.all(7),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 2, 18, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header Badge
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: accentOrange,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'AURACINEMA දැනුම්දීමයි',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Text Card 1
+                        Container(
+                          padding: const EdgeInsets.all(13),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1B1B24),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.subtitles_rounded,
+                                  color: accentOrange,
+                                  size: 19,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Sinhala with sub කියන category එකෙන් sub එක්කම online බලන්න පුලුවන්',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.92),
+                                    fontSize: 12.5,
+                                    height: 1.45,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Text Card 2
+                        Container(
+                          padding: const EdgeInsets.all(13),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1B1B24),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.download_for_offline_rounded,
+                                  color: accentOrange,
+                                  size: 19,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'අනිත් ඒවාට subtitles files දාලා තියෙන්නේ download කරලා බලන්න .',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.92),
+                                    fontSize: 12.5,
+                                    height: 1.45,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+
+                        // Action Buttons: Tutorial & Request
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: badgeGreen,
+                                  foregroundColor: Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const VideoPlayerScreen(
+                                        title: 'AuraCinema Tutorial',
+                                        videoUrl: _tutorialVideoUrl,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text(
+                                  'Tutorial',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accentOrange,
+                                  foregroundColor: Colors.black,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  _showWhatsAppRequestDialog(
+                                    promptTitle: 'මොනවාද දැනගන්න ඕනා',
+                                    hintText: 'ඔයාට දැනගන්න ඕන දේ type කරන්න...',
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.chat_rounded,
+                                  size: 17,
+                                ),
+                                label: const Text(
+                                  'Request',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _startHeroAutoSlide() {
@@ -170,25 +463,41 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final data = await _movieService.getHomeData();
+      final results = await Future.wait([
+        _movieService.getHomeData(),
+        _movieService.getMovies().catchError((_) => null),
+      ]);
+
+      final data = results[0];
       final map = data is Map ? data : <dynamic, dynamic>{};
 
       final latest = _parseMovieList(map['latestMovies'] ?? map['movies']);
+      final allFromEndpoint = _extractMoviesFromResponse(results[1]) ?? [];
+
+      final mergedMap = <int, Movie>{
+        for (final m in allFromEndpoint) m.id: m,
+        for (final m in latest) m.id: m,
+      };
+      final combinedAll = _sortByAddedOrder(mergedMap.values.toList());
+
       final heroesRaw = _parseMovieList(map['heroes']);
       final subRaw = _parseMovieList(map['watchWithSub']);
 
       final heroes =
-          heroesRaw.isNotEmpty ? heroesRaw : latest.take(5).toList();
+          heroesRaw.isNotEmpty ? heroesRaw : combinedAll.take(5).toList();
       final subList = subRaw.isNotEmpty
           ? subRaw
-          : latest.where((m) => m.watchWithSub).toList();
+          : combinedAll.where((m) => m.watchWithSub).toList();
 
       if (!mounted) return;
       setState(() {
-        _allMovies = latest;
+        _allMovies = combinedAll;
+        _latestMovies =
+            latest.isNotEmpty ? latest : combinedAll.take(15).toList();
         _heroMovies = heroes;
-        _subMovies = subList.isNotEmpty ? subList : latest.reversed.toList();
-        _filteredMovies = _filterStrict(latest);
+        _subMovies =
+            subList.isNotEmpty ? subList : combinedAll.reversed.toList();
+        _filteredMovies = _filterStrict(combinedAll);
         _currentPage = 1;
         _heroIndex = 0;
         _isLoading = false;
@@ -377,7 +686,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showWhatsAppRequestDialog() {
+  void _showWhatsAppRequestDialog({
+    String promptTitle = 'Request via WhatsApp',
+    String hintText = 'Movie / Series / Anime නම type කරන්න...',
+  }) {
     final controller = TextEditingController();
     showDialog(
       context: context,
@@ -388,16 +700,18 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(16),
             side: const BorderSide(color: Colors.white12),
           ),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.chat_rounded, color: badgeGreen, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Request via WhatsApp',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+              const Icon(Icons.chat_rounded, color: badgeGreen, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  promptTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -405,10 +719,11 @@ class _HomeScreenState extends State<HomeScreen> {
           content: TextField(
             controller: controller,
             autofocus: true,
+            maxLines: 2,
             style: const TextStyle(color: Colors.white, fontSize: 13.5),
             cursorColor: accentOrange,
             decoration: InputDecoration(
-              hintText: 'Movie / Series / Anime නම type කරන්න...',
+              hintText: hintText,
               hintStyle: const TextStyle(
                 color: Colors.white38,
                 fontSize: 12.5,
@@ -438,12 +753,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               onPressed: () async {
-                final name = controller.text.trim();
+                final text = controller.text.trim();
                 Navigator.pop(ctx);
                 final msg = Uri.encodeComponent(
-                  name.isEmpty
-                      ? 'Hi AuraCinema, movie/series request ekak danna kamathiyi.'
-                      : 'Hi AuraCinema, me title eka add karanna puluwanda: $name',
+                  text.isEmpty ? 'Hi AuraCinema, මට උදව්වක් ඕනා.' : text,
                 );
                 final uri =
                     Uri.parse('https://wa.me/$_whatsappPhone?text=$msg');
@@ -619,7 +932,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     if (item == 'REQUEST') {
-      _showWhatsAppRequestDialog();
+      _showWhatsAppRequestDialog(
+        promptTitle: 'මොනවාද දැනගන්න ඕනා',
+        hintText: 'Movie / Series / Anime request එක හෝ ප්‍රශ්නය type කරන්න...',
+      );
       return;
     }
 
@@ -1034,7 +1350,10 @@ class _HomeScreenState extends State<HomeScreen> {
               title: Row(
                 children: [
                   GestureDetector(
-                    onTap: _goHome,
+                   onTap: () {
+                      _goHome();
+                      _showAuraNoticePopup();
+                    },
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1124,24 +1443,37 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 4),
                   IconButton(
-                    tooltip: 'Admin',
+                    tooltip: 'දැනුම්දීම',
                     padding: EdgeInsets.zero,
                     constraints:
                         const BoxConstraints(minWidth: 34, minHeight: 34),
                     icon: const Icon(
-                      Icons.admin_panel_settings_outlined,
-                      color: Colors.white54,
+                      Icons.info_outline_rounded,
+                      color: accentOrange,
                       size: 20,
                     ),
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AdminLoginScreen()),
-                      );
-                      if (mounted) _loadHomeData();
-                    },
+                    onPressed: _showAuraNoticePopup,
                   ),
+                  if (kDebugMode)
+                    IconButton(
+                      tooltip: 'Admin',
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 34, minHeight: 34),
+                      icon: const Icon(
+                        Icons.admin_panel_settings_outlined,
+                        color: Colors.white54,
+                        size: 20,
+                      ),
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AdminLoginScreen()),
+                        );
+                        if (mounted) _loadHomeData();
+                      },
+                    ),
                 ],
               ),
             ),
@@ -1264,7 +1596,8 @@ class _HomeScreenState extends State<HomeScreen> {
               if (!_isInSpecificCategory && !hasSearchQuery) ...[
                 SliverToBoxAdapter(child: _buildHeroCarousel()),
                 SliverToBoxAdapter(
-                  child: _buildHorizontalSection('New on AuraCinema', _allMovies),
+                  child:
+                      _buildHorizontalSection('New on AuraCinema', _latestMovies),
                 ),
                 SliverToBoxAdapter(
                   child: _buildHorizontalSection('Watch with sub', _subMovies),
