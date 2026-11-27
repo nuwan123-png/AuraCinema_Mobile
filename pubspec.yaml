@@ -2,7 +2,7 @@ name: auracinema_mobile
 description: "AuraCinema - Movies, Drama, Series & Anime Streaming App"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.14.0
@@ -31,6 +31,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/
+    - shorebird.yaml
 
 flutter_launcher_icons:
   android: "launcher_icon"

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -9,11 +10,13 @@ import 'package:webview_flutter/webview_flutter.dart';
 class VideoPlayerScreen extends StatefulWidget {
   final String title;
   final String videoUrl;
+  final String? subtitleUrl;
 
   const VideoPlayerScreen({
     super.key,
     required this.title,
     required this.videoUrl,
+    this.subtitleUrl,
   });
 
   @override
@@ -31,6 +34,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _showControls = true;
   bool _isMuted = false;
   double _playbackSpeed = 1.0;
+
+  List<_SubtitleCue> _subtitleCues = const [];
+  bool _subtitlesEnabled = true;
 
   Timer? _extractTimer;
   Timer? _hideControlsTimer;
@@ -125,9 +131,155 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
+  Future<void> _loadSubtitlesInBackground({
+    String? inlineSubText,
+    String? streamtapeSubUrl,
+    Map<String, String>? headers,
+  }) async {
+    // 1. Streamtape page එකෙන් කෙළින්ම ගත්ත subtitle text එක තියෙනවා නම් එය parse කරන්න
+    if (inlineSubText != null && inlineSubText.trim().isNotEmpty) {
+      final cues = _parseSubtitles(inlineSubText);
+      if (cues.isNotEmpty && mounted) {
+        setState(() => _subtitleCues = cues);
+        return;
+      }
+    }
+
+    // 2. Admin panel subtitle_url හෝ Streamtape track URL එකෙන් download කරන්න
+    final candidates = <String>[
+      if (widget.subtitleUrl != null && widget.subtitleUrl!.trim().isNotEmpty)
+        _resolvedUrl(widget.subtitleUrl!),
+      if (streamtapeSubUrl != null && streamtapeSubUrl.trim().isNotEmpty)
+        streamtapeSubUrl.trim(),
+    ];
+
+    for (final url in candidates) {
+      try {
+        final res = await http
+            .get(Uri.parse(url), headers: headers)
+            .timeout(const Duration(seconds: 8));
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          final text = utf8.decode(res.bodyBytes, allowMalformed: true).trim();
+          if (text.isNotEmpty && !text.toLowerCase().startsWith('<!doctype')) {
+            final cues = _parseSubtitles(text);
+            if (cues.isNotEmpty && mounted) {
+              setState(() => _subtitleCues = cues);
+              return;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  List<_SubtitleCue> _parseSubtitles(String raw) {
+    final normalized = raw
+        .replaceFirst('\uFEFF', '')
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .trim();
+
+    if (normalized.isEmpty) return const [];
+
+    final blocks = normalized.split(RegExp(r'\n\s*\n'));
+    final cues = <_SubtitleCue>[];
+
+    for (final block in blocks) {
+      final lines = block
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      if (lines.length < 2) continue;
+
+      int timeLineIdx = -1;
+      for (int i = 0; i < lines.length; i++) {
+        if (lines[i].contains('-->')) {
+          timeLineIdx = i;
+          break;
+        }
+      }
+      if (timeLineIdx == -1 || timeLineIdx + 1 >= lines.length) continue;
+
+      final parts = lines[timeLineIdx].split('-->');
+      if (parts.length != 2) continue;
+
+      final start = _parseTimestamp(parts[0]);
+      final end = _parseTimestamp(parts[1]);
+      if (start == null || end == null) continue;
+
+      final text = lines
+          .sublist(timeLineIdx + 1)
+          .join('\n')
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .trim();
+
+      if (text.isNotEmpty) {
+        cues.add(_SubtitleCue(start: start, end: end, text: text));
+      }
+    }
+
+    cues.sort((a, b) => a.start.compareTo(b.start));
+    return cues;
+  }
+
+  Duration? _parseTimestamp(String raw) {
+    final token = raw.trim().split(RegExp(r'\s+')).first.replaceAll(',', '.');
+    final segs = token.split(':');
+    if (segs.length < 2 || segs.length > 3) return null;
+
+    int hours = 0;
+    int minutes = 0;
+    String secPart = '';
+
+    if (segs.length == 3) {
+      hours = int.tryParse(segs[0]) ?? 0;
+      minutes = int.tryParse(segs[1]) ?? 0;
+      secPart = segs[2];
+    } else {
+      minutes = int.tryParse(segs[0]) ?? 0;
+      secPart = segs[1];
+    }
+
+    final secSplit = secPart.split('.');
+    final seconds = int.tryParse(secSplit[0]) ?? 0;
+    final millisStr = secSplit.length > 1
+        ? secSplit[1].padRight(3, '0').substring(0, 3)
+        : '0';
+    final millis = int.tryParse(millisStr) ?? 0;
+
+    return Duration(
+      hours: hours,
+      minutes: minutes,
+      seconds: seconds,
+      milliseconds: millis,
+    );
+  }
+
+  String _findCurrentCaption(Duration position) {
+    if (_subtitleCues.isEmpty) return '';
+    int low = 0;
+    int high = _subtitleCues.length - 1;
+
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      final cue = _subtitleCues[mid];
+      if (position < cue.start) {
+        high = mid - 1;
+      } else if (position > cue.end) {
+        low = mid + 1;
+      } else {
+        return cue.text;
+      }
+    }
+    return '';
+  }
+
   Future<void> _initNativePlayer(
     String streamUrl, {
     Map<String, String>? headers,
+    String? inlineSubText,
+    String? streamtapeSubUrl,
   }) async {
     if (_isTryingNativeInit) return;
     _isTryingNativeInit = true;
@@ -138,7 +290,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         httpHeaders: headers ?? const {},
       );
 
-      await controller.initialize().timeout(const Duration(seconds: 7));
+      await controller.initialize().timeout(const Duration(seconds: 8));
       if (!mounted) {
         await controller.dispose();
         return;
@@ -147,6 +299,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       _extractTimer?.cancel();
       _webController?.loadRequest(Uri.parse('about:blank'));
 
+      // Video එක මුලින්ම ක්ෂණිකව play කරන්න
       setState(() {
         _nativeController = controller;
         _useNativePlayer = true;
@@ -156,8 +309,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
       await controller.play();
       _startHideControlsTimer();
+
+      // Subtitles background එකෙන් load කරන්න (UI එක block නොවී)
+      unawaited(
+        _loadSubtitlesInBackground(
+          inlineSubText: inlineSubText,
+          streamtapeSubUrl: streamtapeSubUrl,
+          headers: headers,
+        ),
+      );
     } catch (_) {
-      // Native stream fail වුණොත් WebView player එකෙන්ම play වෙන්න ඉඩ දෙන්න
       _isTryingNativeInit = false;
       if (!mounted) return;
       if (_webController == null) {
@@ -196,7 +357,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
     try {
       final rawResult = await controller.runJavaScriptReturningResult('''
-        (function() {
+        (async function() {
           try {
             var videoEl = document.querySelector('video');
             var sourceEl = document.querySelector('video source');
@@ -208,15 +369,48 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               document.getElementById('norobotlink') ? document.getElementById('norobotlink').textContent : '',
               document.getElementById('ideoolink') ? document.getElementById('ideoolink').textContent : ''
             ];
+            var foundUrl = '';
             for (var i = 0; i < candidates.length; i++) {
               var val = (candidates[i] || '').trim();
               if (val && (val.includes('get_video?') || val.includes('tapecontent') || val.includes('.mp4'))) {
-                return JSON.stringify({
-                  url: val,
-                  ua: navigator.userAgent
-                });
+                foundUrl = val;
+                break;
               }
             }
+            if (!foundUrl) return '';
+
+            var tracks = document.querySelectorAll('track');
+            var subUrl = '';
+            for (var j = 0; j < tracks.length; j++) {
+              var tSrc = (tracks[j].getAttribute('src') || tracks[j].src || '').trim();
+              if (tSrc) {
+                subUrl = tSrc;
+                var lbl = (tracks[j].label || tracks[j].srclang || '').toLowerCase();
+                if (lbl.includes('si') || lbl.includes('sinhala') || lbl.includes('singhalese')) {
+                  break;
+                }
+              }
+            }
+
+            var subText = '';
+            if (subUrl) {
+              try {
+                var ctrl = new AbortController();
+                var tid = setTimeout(function() { ctrl.abort(); }, 2500);
+                var resp = await fetch(subUrl, { signal: ctrl.signal });
+                clearTimeout(tid);
+                if (resp.ok) {
+                  subText = await resp.text();
+                }
+              } catch (e) {}
+            }
+
+            return JSON.stringify({
+              url: foundUrl,
+              subUrl: subUrl,
+              subText: subText,
+              ua: navigator.userAgent
+            });
           } catch (e) {}
           return '';
         })();
@@ -232,6 +426,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
       if (decoded is Map && decoded['url'] != null) {
         String extractedUrl = decoded['url'].toString().trim();
+        String extractedSubUrl = (decoded['subUrl'] ?? '').toString().trim();
+        final extractedSubText = (decoded['subText'] ?? '').toString();
         final userAgent = decoded['ua']?.toString() ?? '';
 
         if (extractedUrl.isEmpty || extractedUrl.startsWith('blob:')) return;
@@ -245,8 +441,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           extractedUrl = '$extractedUrl&stream=1';
         }
 
+        if (extractedSubUrl.startsWith('//')) {
+          extractedSubUrl = 'https:$extractedSubUrl';
+        } else if (extractedSubUrl.startsWith('/')) {
+          extractedSubUrl = 'https://streamtape.com$extractedSubUrl';
+        }
+
         await _initNativePlayer(
           extractedUrl,
+          inlineSubText: extractedSubText,
+          streamtapeSubUrl: extractedSubUrl,
           headers: {
             'Referer': 'https://streamtape.com/',
             if (userAgent.isNotEmpty) 'User-Agent': userAgent,
@@ -274,7 +478,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               return NavigationDecision.prevent;
             }
 
-            // Streamtape page එකකදී external ad redirects 100% නවත්වන්න
             if (isStape &&
                 (url.startsWith('http://') || url.startsWith('https://'))) {
               final isAllowedStape =
@@ -319,7 +522,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _webController = controller;
   }
 
-  // Player DOM එකට හානි නොකර Popups සහ External Ad Overlays විතරක් අයින් කරන Script එක
   void _injectSafeAntiAdScript() {
     _webController?.runJavaScript('''
       (function() {
@@ -330,7 +532,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           window.prompt = function() { return null; };
 
           function cleanSafe() {
-            // 1. External ad links (<a> tags) පමණක් disable කිරීම
             document.querySelectorAll('a[target="_blank"], a[href^="http"]').forEach(function(a) {
               var href = (a.href || '').toLowerCase();
               if (href &&
@@ -346,7 +547,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               }
             });
 
-            // 2. Third-party ad iframes පමණක් ඉවත් කිරීම
             document.querySelectorAll('iframe').forEach(function(f) {
               var s = (f.src || '').toLowerCase();
               if (s &&
@@ -384,6 +584,29 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     if (_showControls) {
       _startHideControlsTimer();
     }
+  }
+
+  void _toggleSubtitles() {
+    if (_subtitleCues.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('මෙම චිත්‍රපටය සඳහා subtitle file එකක් හමු නොවීය.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final next = !_subtitlesEnabled;
+    setState(() => _subtitlesEnabled = next);
+    _startHideControlsTimer();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(next ? 'Sinhala Subtitles ON' : 'Subtitles OFF'),
+        duration: const Duration(milliseconds: 1100),
+      ),
+    );
   }
 
   Future<void> _setLandscape(bool enable) async {
@@ -458,6 +681,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         final totalMs = duration.inMilliseconds;
         final currentMs =
             position.inMilliseconds.clamp(0, totalMs > 0 ? totalMs : 1);
+        final hasSub = _subtitleCues.isNotEmpty;
+        final isSubActive = hasSub && _subtitlesEnabled;
+        final captionText =
+            isSubActive ? _findCurrentCaption(position) : '';
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -476,6 +703,44 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 const Center(
                   child: CircularProgressIndicator(color: _accentOrange),
                 ),
+              // Sinhala Subtitle Overlay
+              if (captionText.isNotEmpty)
+                Positioned(
+                  left: 18,
+                  right: 18,
+                  bottom: _showControls ? 88 : 24,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.78),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          captionText,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: _isLandscape ? 17 : 14,
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                            shadows: const [
+                              Shadow(
+                                color: Colors.black,
+                                blurRadius: 4,
+                                offset: Offset(1, 1),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (_showControls)
                 Container(
                   decoration: BoxDecoration(
@@ -483,10 +748,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.black.withOpacity(0.75),
+                        Colors.black.withValues(alpha: 0.75),
                         Colors.transparent,
                         Colors.transparent,
-                        Colors.black.withOpacity(0.85),
+                        Colors.black.withValues(alpha: 0.85),
                       ],
                       stops: const [0.0, 0.25, 0.7, 1.0],
                     ),
@@ -525,14 +790,39 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                                 )
                               else
                                 const Spacer(),
+                              if (hasSub) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _accentOrange.withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _accentOrange,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'SINHALA SUB',
+                                    style: TextStyle(
+                                      color: _accentOrange,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color:
-                                      const Color(0xFF10B981).withOpacity(0.2),
+                                  color: const Color(0xFF10B981)
+                                      .withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: const Color(0xFF10B981),
@@ -635,6 +925,53 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                                     ),
                                   ),
                                   const Spacer(),
+                                  // CC (Subtitles) Toggle Button
+                                  GestureDetector(
+                                    onTap: _toggleSubtitles,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isSubActive
+                                            ? _accentOrange
+                                                .withValues(alpha: 0.22)
+                                            : Colors.white12,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: isSubActive
+                                              ? _accentOrange
+                                              : Colors.transparent,
+                                          width: 0.9,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.closed_caption_rounded,
+                                            size: 14,
+                                            color: isSubActive
+                                                ? _accentOrange
+                                                : Colors.white54,
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            'CC',
+                                            style: TextStyle(
+                                              color: isSubActive
+                                                  ? _accentOrange
+                                                  : Colors.white54,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
                                   GestureDetector(
                                     onTap: _cycleSpeed,
                                     child: Container(
@@ -720,74 +1057,89 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: _isLandscape
-          ? null
-          : AppBar(
-              backgroundColor: _bgDark,
-              foregroundColor: Colors.white,
-              title: Text(
-                widget.title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(
-                    Icons.open_in_browser_rounded,
-                    color: Colors.white70,
-                    size: 22,
+    return PopScope(
+      canPop: true,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        appBar: _isLandscape
+            ? null
+            : AppBar(
+                backgroundColor: _bgDark,
+                foregroundColor: Colors.white,
+                title: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
-                  tooltip: 'Open External',
-                  onPressed: _openExternally,
                 ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.fullscreen_rounded,
-                    color: _accentOrange,
-                    size: 26,
-                  ),
-                  tooltip: 'Horizontal Fullscreen',
-                  onPressed: _toggleOrientation,
-                ),
-              ],
-            ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (_useNativePlayer && _nativeController != null)
-            _buildNativePlayerBody()
-          else if (_webController != null)
-            WebViewWidget(controller: _webController!),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(color: _accentOrange),
-            ),
-          if (_isLandscape && !_useNativePlayer)
-            Positioned(
-              top: 14,
-              right: 14,
-              child: SafeArea(
-                child: Material(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(24),
-                  child: IconButton(
+                actions: [
+                  IconButton(
                     icon: const Icon(
-                      Icons.fullscreen_exit_rounded,
+                      Icons.open_in_browser_rounded,
+                      color: Colors.white70,
+                      size: 22,
+                    ),
+                    tooltip: 'Open External',
+                    onPressed: _openExternally,
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.fullscreen_rounded,
                       color: _accentOrange,
                       size: 26,
                     ),
-                    tooltip: 'Exit Fullscreen',
+                    tooltip: 'Horizontal Fullscreen',
                     onPressed: _toggleOrientation,
+                  ),
+                ],
+              ),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_useNativePlayer && _nativeController != null)
+              _buildNativePlayerBody()
+            else if (_webController != null)
+              WebViewWidget(controller: _webController!),
+            if (_isLoading)
+              const Center(
+                child: CircularProgressIndicator(color: _accentOrange),
+              ),
+            if (_isLandscape && !_useNativePlayer)
+              Positioned(
+                top: 14,
+                right: 14,
+                child: SafeArea(
+                  child: Material(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(24),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.fullscreen_exit_rounded,
+                        color: _accentOrange,
+                        size: 26,
+                      ),
+                      tooltip: 'Exit Fullscreen',
+                      onPressed: _toggleOrientation,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+class _SubtitleCue {
+  final Duration start;
+  final Duration end;
+  final String text;
+
+  const _SubtitleCue({
+    required this.start,
+    required this.end,
+    required this.text,
+  });
 }
