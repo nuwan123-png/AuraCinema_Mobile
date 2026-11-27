@@ -71,7 +71,26 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     }
   }
 
-  void _openPlayer(String title, String url) {
+  Future<void> _showSubtitleGuide() {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.78),
+      builder: (_) => const _SubtitleGuideSheet(),
+    );
+  }
+
+  Future<void> _openPlayer(
+    String title,
+    String url, {
+    bool showSubGuide = false,
+  }) async {
+    if (showSubGuide) {
+      await _showSubtitleGuide();
+      if (!mounted) return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -199,8 +218,11 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              onPressed: () =>
-                                  _openPlayer(detail.title, detail.watchUrl!),
+                              onPressed: () => _openPlayer(
+                                detail.title,
+                                detail.watchUrl!,
+                                showSubGuide: true,
+                              ),
                               icon: const Icon(Icons.play_arrow_rounded,
                                   size: 24),
                               label: const Text(
@@ -335,6 +357,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                               onTap: () => _openPlayer(
                                 '${detail.title} - EP ${ep.number}',
                                 ep.url,
+                                showSubGuide: true,
                               ),
                               leading: CircleAvatar(
                                 backgroundColor:
@@ -362,6 +385,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                     onPressed: () => _openPlayer(
                                       '${detail.title} - EP ${ep.number}',
                                       ep.url,
+                                      showSubGuide: true,
                                     ),
                                   ),
                                   if (ep.subtitleUrl != null &&
@@ -482,6 +506,332 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
       child: Text(
         text,
         style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _SubtitleGuideSheet extends StatelessWidget {
+  const _SubtitleGuideSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.54;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF101016),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.85),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Top Gradient Accent Bar
+              Container(
+                height: 4,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFFF97316),
+                      Color(0xFFFBBF24),
+                      Color(0xFF34D399),
+                    ],
+                  ),
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header Row
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF97316)
+                                  .withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: const Color(0xFFF97316)
+                                    .withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.closed_caption,
+                              color: Color(0xFFFB923C),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'AURACINEMA SUBTITLE GUIDE',
+                                  style: TextStyle(
+                                    color: Color(0xFFFB923C),
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'සිංහල Subtitle දාගන්නේ කොහොමද?',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => Navigator.of(context).pop(),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close,
+                                color: Colors.white70,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Sinhala Instruction Text
+                      RichText(
+                        text: const TextSpan(
+                          style: TextStyle(
+                            color: Color(0xFFCBD5E1),
+                            fontSize: 11.5,
+                            height: 1.4,
+                          ),
+                          children: [
+                            TextSpan(text: 'ඔයාලට '),
+                            TextSpan(
+                              text: 'Watch now',
+                              style: TextStyle(
+                                color: Color(0xFFFCD34D),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextSpan(
+                              text:
+                                  ' කියන එකෙන් සිංහල subtitle එක්කම බලන්න පුළුවන්. Player එකේ පහළ දකුණු කොනේ ඇති ',
+                            ),
+                            TextSpan(
+                              text: 'Settings (⚙️)',
+                              style: TextStyle(
+                                color: Color(0xFFFCD34D),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextSpan(text: ' වලට ගිහින් '),
+                            TextSpan(
+                              text: 'Captions → Singhalese',
+                              style: TextStyle(
+                                color: Color(0xFF34D399),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextSpan(text: ' දාගන්න.'),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // 2 Side-by-Side Zoomed Step Cards
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _SubStepCard(
+                              stepNumber: '1',
+                              badgeColor: const Color(0xFFF97316),
+                              borderColor: const Color(0xFFF97316)
+                                  .withValues(alpha: 0.35),
+                              title: 'Settings (⚙️) ඔබන්න',
+                              imageUrl:
+                                  'https://auracinema.duckdns.org/images/sub-step-1.jpg',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _SubStepCard(
+                              stepNumber: '2',
+                              badgeColor: const Color(0xFF10B981),
+                              borderColor: const Color(0xFF10B981)
+                                  .withValues(alpha: 0.35),
+                              title: 'Captions → Singhalese',
+                              imageUrl:
+                                  'https://auracinema.duckdns.org/images/sub-step-2.jpg',
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // OK Action Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 40,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFF97316), Color(0xFFF59E0B)],
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: ElevatedButton.icon(
+                            onPressed: () => Navigator.of(context).pop(),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            icon: const Icon(Icons.check,
+                                color: Colors.white, size: 17),
+                            label: const Text(
+                              'හරි, තේරුණා • දැන් බලමු',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SubStepCard extends StatelessWidget {
+  final String stepNumber;
+  final Color badgeColor;
+  final Color borderColor;
+  final String title;
+  final String imageUrl;
+
+  const _SubStepCard({
+    required this.stepNumber,
+    required this.badgeColor,
+    required this.borderColor,
+    required this.title,
+    required this.imageUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF18181B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 18,
+                  height: 18,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: badgeColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    stepNumber,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          AspectRatio(
+            aspectRatio: 16 / 10,
+            child: ClipRect(
+              child: Transform.scale(
+                scale: 1.75,
+                alignment: Alignment.bottomRight,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Colors.black,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.settings, color: Colors.white38),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

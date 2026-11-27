@@ -249,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'Sinhala with sub කියන category එකෙන් sub එක්කම online බලන්න පුලුවන්',
+                                  'ඔයාලට Watch now කියන එකෙන් සිංහල subtitle එක්කම බලන්න පුළුවන්.',
                                   style: TextStyle(
                                     color: Colors.white.withOpacity(0.92),
                                     fontSize: 12.5,
@@ -283,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'අනිත් ඒවාට subtitles files දාලා තියෙන්නේ download කරලා බලන්න .',
+                                  'Watch now player එකේ Settings වලට ගිහින් Captions → Singhalese දාගන්න.',
                                   style: TextStyle(
                                     color: Colors.white.withOpacity(0.92),
                                     fontSize: 12.5,
