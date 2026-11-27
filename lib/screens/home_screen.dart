@@ -94,15 +94,11 @@ class _HomeScreenState extends State<HomeScreen> {
     'Thriller',
   ];
 
-  final List<String> _years = [
-    '2026',
-    '2025',
-    '2024',
-    '2023',
-    '2022',
-    '2021',
-    '2020',
-  ];
+  // Same range as the website nav: (current year + 1) down to 2000.
+  final List<String> _years = List<String>.generate(
+    (DateTime.now().year + 1) - 2000 + 1,
+    (i) => ((DateTime.now().year + 1) - i).toString(),
+  );
 
   @override
   void initState() {
