@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../models/movie_detail_model.dart';
 import '../models/movie_model.dart';
+import '../theme/aura_theme.dart';
+import '../widgets/glass_widgets.dart';
 import 'video_player_screen.dart';
 
 class MovieDetailScreen extends StatefulWidget {
@@ -16,9 +18,6 @@ class MovieDetailScreen extends StatefulWidget {
 }
 
 class _MovieDetailScreenState extends State<MovieDetailScreen> {
-  static const Color bgDark = Color(0xFF0B0B0F);
-  static const Color surfaceDark = Color(0xFF14141B);
-  static const Color accentOrange = Color(0xFFFF9F1C);
   static const Color badgeGreen = Color(0xFF10B981);
 
   MovieDetail? _detail;
@@ -86,22 +85,45 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
+    final bgBase = glass.backgroundGradient.first;
     final detail = _detail;
     final availableDownloads = detail?.downloads.entries
             .where((e) => e.value != null && e.value!.isNotEmpty)
             .toList() ??
         [];
 
-    return Scaffold(
-      backgroundColor: bgDark,
+    return AuraGradientScaffold(
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           SliverAppBar(
             expandedHeight: 340,
             pinned: true,
-            backgroundColor: bgDark,
-            foregroundColor: Colors.white,
+            backgroundColor: bgBase.withOpacity(0.85),
+            foregroundColor: glass.textPrimary,
+            leading: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: GlassPanel(
+                borderRadius: 999,
+                blur: 16,
+                padding: EdgeInsets.zero,
+                onTap: () => Navigator.pop(context),
+                child: Center(
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: glass.textPrimary,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+            actions: const [
+              Padding(
+                padding: EdgeInsets.only(right: 12),
+                child: Center(child: AuraThemeToggleButton()),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -110,7 +132,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                     widget.movie.fullImageUrl,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) =>
-                        Container(color: surfaceDark),
+                        Container(color: glass.cardSurface),
                   ),
                   DecoratedBox(
                     decoration: BoxDecoration(
@@ -118,10 +140,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withValues(alpha: 0.35),
+                          Colors.black.withOpacity(0.32),
                           Colors.transparent,
-                          bgDark.withValues(alpha: 0.9),
-                          bgDark,
+                          bgBase.withOpacity(0.88),
+                          bgBase,
                         ],
                         stops: const [0.0, 0.4, 0.85, 1.0],
                       ),
@@ -133,126 +155,154 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 36),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 36),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    widget.movie.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      height: 1.2,
+                  // Frosted Glass Hero Info Panel
+                  GlassPanel(
+                    borderRadius: 24,
+                    blur: 24,
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.movie.title,
+                          style: TextStyle(
+                            color: glass.textPrimary,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            _buildTag(
+                              widget.movie.displayYear,
+                              glass.glassFill,
+                              glass.textPrimary,
+                              borderColor: glass.glassBorder,
+                            ),
+                            if (widget.movie.watchWithSub)
+                              _buildTag(
+                                  'SINHALA SUB', badgeGreen, Colors.white),
+                            _buildTag(
+                              widget.movie.type.toUpperCase(),
+                              glass.secondaryAccent.withOpacity(0.18),
+                              glass.secondaryAccent,
+                              borderColor:
+                                  glass.secondaryAccent.withOpacity(0.45),
+                            ),
+                          ],
+                        ),
+                        if (!_isLoading &&
+                            _error == null &&
+                            detail != null &&
+                            (detail.watchUrl != null ||
+                                detail.effectiveTrailerUrl != null)) ...[
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              if (detail.watchUrl != null)
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: glass.primaryAccent,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      shape: const StadiumBorder(),
+                                    ),
+                                    onPressed: () => _openPlayer(
+                                      detail.title,
+                                      detail.watchUrl!,
+                                      subtitleUrl: detail.fullSubtitleUrl,
+                                    ),
+                                    icon: const Icon(Icons.play_arrow_rounded,
+                                        size: 24),
+                                    label: const Text(
+                                      'Watch Now',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 15),
+                                    ),
+                                  ),
+                                ),
+                              if (detail.watchUrl != null &&
+                                  detail.effectiveTrailerUrl != null)
+                                const SizedBox(width: 10),
+                              if (detail.effectiveTrailerUrl != null)
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: glass.textPrimary,
+                                      side:
+                                          BorderSide(color: glass.glassBorder),
+                                      backgroundColor: glass.glassFill,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      shape: const StadiumBorder(),
+                                    ),
+                                    onPressed: () => _openPlayer(
+                                      '${detail.title} - Trailer',
+                                      detail.effectiveTrailerUrl!,
+                                    ),
+                                    icon: Icon(Icons.ondemand_video_rounded,
+                                        color: glass.secondaryAccent, size: 20),
+                                    label: const Text(
+                                      'Trailer',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      _buildTag(
-                          widget.movie.displayYear, surfaceDark, Colors.white),
-                      if (widget.movie.watchWithSub)
-                        _buildTag('SINHALA SUB', badgeGreen, Colors.white),
-                      _buildTag(
-                        widget.movie.type.toUpperCase(),
-                        accentOrange.withValues(alpha: 0.18),
-                        accentOrange,
-                      ),
-                    ],
                   ),
                   const SizedBox(height: 20),
                   if (_isLoading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 40),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
                       child: Center(
-                        child: CircularProgressIndicator(color: accentOrange),
+                        child: CircularProgressIndicator(
+                            color: glass.primaryAccent),
                       ),
                     )
                   else if (_error != null)
-                    Center(
-                      child: Column(
-                        children: [
-                          Text(_error!,
-                              style: const TextStyle(color: Colors.white60)),
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: accentOrange,
-                              foregroundColor: Colors.black,
+                    GlassPanel(
+                      child: Center(
+                        child: Column(
+                          children: [
+                            Text(_error!,
+                                style: TextStyle(color: glass.textSecondary)),
+                            const SizedBox(height: 12),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: glass.primaryAccent,
+                                foregroundColor: Colors.white,
+                                shape: const StadiumBorder(),
+                              ),
+                              onPressed: _fetchDetails,
+                              child: const Text('Retry'),
                             ),
-                            onPressed: _fetchDetails,
-                            child: const Text('Retry'),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     )
                   else if (detail != null) ...[
-                    Row(
-                      children: [
-                        if (detail.watchUrl != null)
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: accentOrange,
-                                foregroundColor: Colors.black,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: () => _openPlayer(
-                                detail.title,
-                                detail.watchUrl!,
-                                subtitleUrl: detail.fullSubtitleUrl,
-                              ),
-                              icon: const Icon(Icons.play_arrow_rounded,
-                                  size: 24),
-                              label: const Text(
-                                'Watch Now',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w800, fontSize: 15),
-                              ),
-                            ),
-                          ),
-                        if (detail.watchUrl != null &&
-                            detail.effectiveTrailerUrl != null)
-                          const SizedBox(width: 10),
-                        if (detail.effectiveTrailerUrl != null)
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                side: BorderSide(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.22)),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: () => _openPlayer(
-                                '${detail.title} - Trailer',
-                                detail.effectiveTrailerUrl!,
-                              ),
-                              icon: const Icon(Icons.ondemand_video_rounded,
-                                  color: accentOrange, size: 20),
-                              label: const Text(
-                                'Trailer',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 14),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
                     if (availableDownloads.isNotEmpty ||
                         detail.fullSubtitleUrl != null) ...[
-                      const SizedBox(height: 24),
-                      _sectionHeader('Download Links'),
+                      const SizedBox(height: 6),
+                      _sectionHeader('Download Links', glass),
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 10,
@@ -264,20 +314,20 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isTg
                                     ? const Color(0xFF0088CC)
-                                    : surfaceDark,
-                                foregroundColor: Colors.white,
+                                    : glass.cardSurface,
+                                foregroundColor:
+                                    isTg ? Colors.white : glass.textPrimary,
+                                elevation: 0,
                                 side: BorderSide(
                                   color: isTg
                                       ? Colors.transparent
-                                      : badgeGreen.withValues(alpha: 0.5),
+                                      : badgeGreen.withOpacity(0.5),
                                 ),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,
                                   vertical: 12,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
+                                shape: const StadiumBorder(),
                               ),
                               onPressed: () => _openExternalLink(entry.value!),
                               icon: Icon(
@@ -297,24 +347,24 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                           if (detail.fullSubtitleUrl != null)
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: surfaceDark,
-                                foregroundColor: Colors.white,
+                                backgroundColor: glass.cardSurface,
+                                foregroundColor: glass.textPrimary,
+                                elevation: 0,
                                 side: BorderSide(
-                                  color: accentOrange.withValues(alpha: 0.55),
+                                  color:
+                                      glass.secondaryAccent.withOpacity(0.55),
                                 ),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,
                                   vertical: 12,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
+                                shape: const StadiumBorder(),
                               ),
                               onPressed: () =>
                                   _openExternalLink(detail.fullSubtitleUrl!),
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.subtitles_rounded,
-                                color: accentOrange,
+                                color: glass.secondaryAccent,
                                 size: 18,
                               ),
                               label: const Text(
@@ -328,15 +378,15 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                     ],
                     if (detail.episodes.isNotEmpty) ...[
                       const SizedBox(height: 24),
-                      _sectionHeader('Episodes (${detail.episodes.length})'),
+                      _sectionHeader(
+                          'Episodes (${detail.episodes.length})', glass),
                       const SizedBox(height: 10),
                       ...detail.episodes.map((ep) => Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
-                              color: surfaceDark,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.08)),
+                              color: glass.cardSurface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: glass.glassBorder),
                             ),
                             child: ListTile(
                               onTap: () => _openPlayer(
@@ -346,27 +396,27 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                               ),
                               leading: CircleAvatar(
                                 backgroundColor:
-                                    accentOrange.withValues(alpha: 0.18),
+                                    glass.primaryAccent.withOpacity(0.18),
                                 child: Text(
                                   '${ep.number}',
-                                  style: const TextStyle(
-                                    color: accentOrange,
+                                  style: TextStyle(
+                                    color: glass.primaryAccent,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
                               title: Text(
                                 'Episode ${ep.number}',
-                                style: const TextStyle(
-                                    color: Colors.white,
+                                style: TextStyle(
+                                    color: glass.textPrimary,
                                     fontWeight: FontWeight.w600),
                               ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.play_circle_fill,
-                                        color: accentOrange),
+                                    icon: Icon(Icons.play_circle_fill,
+                                        color: glass.primaryAccent),
                                     onPressed: () => _openPlayer(
                                       '${detail.title} - EP ${ep.number}',
                                       ep.url,
@@ -376,8 +426,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                   if (ep.subtitleUrl != null &&
                                       ep.subtitleUrl!.trim().isNotEmpty)
                                     IconButton(
-                                      icon: const Icon(Icons.subtitles_rounded,
-                                          color: accentOrange),
+                                      icon: Icon(Icons.subtitles_rounded,
+                                          color: glass.secondaryAccent),
                                       onPressed: () => _openExternalLink(
                                           ep.subtitleUrl!.trim()),
                                     ),
@@ -396,7 +446,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                     ],
                     if (detail.fullGalleryUrls.isNotEmpty) ...[
                       const SizedBox(height: 24),
-                      _sectionHeader('Gallery'),
+                      _sectionHeader('Gallery', glass),
                       const SizedBox(height: 10),
                       SizedBox(
                         height: 115,
@@ -407,15 +457,21 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                           separatorBuilder: (_, __) =>
                               const SizedBox(width: 10),
                           itemBuilder: (context, index) {
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Image.network(
-                                detail.fullGalleryUrls[index],
-                                width: 185,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
+                            return Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: glass.glassBorder),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(11),
+                                child: Image.network(
+                                  detail.fullGalleryUrls[index],
                                   width: 185,
-                                  color: surfaceDark,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 185,
+                                    color: glass.cardSurface,
+                                  ),
                                 ),
                               ),
                             );
@@ -426,21 +482,16 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                     if (detail.description != null &&
                         detail.description!.isNotEmpty) ...[
                       const SizedBox(height: 24),
-                      _sectionHeader('Storyline'),
+                      _sectionHeader('Storyline', glass),
                       const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: surfaceDark,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.06)),
-                        ),
+                      GlassPanel(
+                        borderRadius: 16,
+                        blur: 16,
+                        padding: const EdgeInsets.all(16),
                         child: Text(
                           detail.description!,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.86),
+                            color: glass.textPrimary.withOpacity(0.88),
                             fontSize: 13.5,
                             height: 1.55,
                           ),
@@ -457,22 +508,22 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     );
   }
 
-  Widget _sectionHeader(String title) {
+  Widget _sectionHeader(String title, AuraGlassColors glass) {
     return Row(
       children: [
         Container(
           width: 3.5,
           height: 18,
           decoration: BoxDecoration(
-            color: accentOrange,
+            color: glass.primaryAccent,
             borderRadius: BorderRadius.circular(4),
           ),
         ),
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: glass.textPrimary,
             fontSize: 16.5,
             fontWeight: FontWeight.w700,
           ),
@@ -481,12 +532,13 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     );
   }
 
-  Widget _buildTag(String text, Color bg, Color fg) {
+  Widget _buildTag(String text, Color bg, Color fg, {Color? borderColor}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
+        border: borderColor != null ? Border.all(color: borderColor) : null,
       ),
       child: Text(
         text,

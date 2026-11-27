@@ -5,7 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/movie_model.dart';
 import '../services/movie_service.dart';
+import '../theme/aura_theme.dart';
+import '../widgets/aura_blue_logo.dart';
+import '../widgets/aura_bottom_nav.dart';
 import '../widgets/cached_poster.dart';
+import '../widgets/glass_widgets.dart';
 import 'admin_login_screen.dart';
 import 'movie_detail_screen.dart';
 import 'video_player_screen.dart';
@@ -20,9 +24,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final MovieService _movieService = MovieService();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final PageController _heroController = PageController();
 
-  // ඔයාගේ WhatsApp අංකය සහ R2 Tutorial Video URL එක මෙතනින් වෙනස් කරගන්න පුළුවන්
   static const String _whatsappPhone = '94788402670';
   static const String _tutorialVideoUrl =
       'https://pub-63df71478cdb4786a59eae41e51254b1.r2.dev/gallery/tutorial.mp4';
@@ -38,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Movie> _filteredMovies = [];
 
   bool _isLoading = true;
+  bool _isSearchOpen = false;
   String? _error;
   int _heroIndex = 0;
   int _currentPage = 1;
@@ -48,21 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedGenre;
   String? _selectedYear;
 
-  static const Color bgDark = Color(0xFF0B0B0F);
-  static const Color surfaceDark = Color(0xFF14141B);
-  static const Color chipBg = Color(0xFF181822);
-  static const Color accentOrange = Color(0xFFFF9F1C);
   static const Color badgeGreen = Color(0xFF10B981);
-
-  final List<String> _navItems = [
-    'GENRE ▾',
-    'MOVIES',
-    'DRAMA / SERIES',
-    'ANIME',
-    'SUGGESTION',
-    'YEAR ▾',
-    'REQUEST',
-  ];
 
   final List<String> _languages = [
     'Hindi',
@@ -94,7 +85,6 @@ class _HomeScreenState extends State<HomeScreen> {
     'Thriller',
   ];
 
-  // Same range as the website nav: (current year + 1) down to 2000.
   final List<String> _years = List<String>.generate(
     (DateTime.now().year + 1) - 2000 + 1,
     (i) => ((DateTime.now().year + 1) - i).toString(),
@@ -118,262 +108,463 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _heroTimer?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _heroController.dispose();
     super.dispose();
   }
 
-  void _showAuraNoticePopup() {
-    showDialog(
+  int get _activeBottomNavIndex {
+    if (_selectedNav == 'MOVIES' || _selectedLanguage != null) return 1;
+    if (_selectedNav == 'DRAMA / SERIES') return 2;
+    if (_selectedNav == 'ANIME') return 3;
+    if (_selectedGenre != null ||
+        _selectedYear != null ||
+        _selectedNav == 'SUGGESTION') {
+      return 4;
+    }
+    return 0;
+  }
+
+  void _onBottomNavTap(int index) {
+    switch (index) {
+      case 0:
+        _goHome();
+        break;
+      case 1:
+        if (_selectedNav == 'MOVIES' && _selectedLanguage == null) {
+          _goHome();
+        } else {
+          _setExclusiveFilter(nav: 'MOVIES');
+        }
+        break;
+      case 2:
+        if (_selectedNav == 'DRAMA / SERIES') {
+          _goHome();
+        } else {
+          _setExclusiveFilter(nav: 'DRAMA / SERIES');
+        }
+        break;
+      case 3:
+        if (_selectedNav == 'ANIME') {
+          _goHome();
+        } else {
+          _setExclusiveFilter(nav: 'ANIME');
+        }
+        break;
+      case 4:
+        _showMoreFiltersSheet();
+        break;
+    }
+  }
+
+  void _showMoreFiltersSheet() {
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
+    showModalBottomSheet(
       context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withOpacity(0.78),
+      backgroundColor: glass.modalSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: glass.glassBorder),
+      ),
       builder: (ctx) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 420),
-            decoration: BoxDecoration(
-              color: const Color(0xFF13131A),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.65),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: glass.textSecondary.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                Text(
+                  'Explore & Filters',
+                  style: TextStyle(
+                    color: glass.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _buildMoreOptionTile(
+                  glass: glass,
+                  icon: Icons.movie_filter_rounded,
+                  iconColor: glass.primaryAccent,
+                  title: _selectedGenre != null
+                      ? 'Genre ($_selectedGenre)'
+                      : 'Genre',
+                  subtitle: 'Action, Horror, Thriller, Romance...',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showGenrePicker();
+                  },
+                ),
+                const SizedBox(height: 10),
+                _buildMoreOptionTile(
+                  glass: glass,
+                  icon: Icons.access_time_filled_rounded,
+                  iconColor: glass.secondaryAccent,
+                  title: _selectedYear != null
+                      ? 'Release Year ($_selectedYear)'
+                      : 'Release Year',
+                  subtitle: 'Filter by release year (2000 - ${DateTime.now().year + 1})',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showYearPicker();
+                  },
+                ),
+                const SizedBox(height: 10),
+                _buildMoreOptionTile(
+                  glass: glass,
+                  icon: Icons.play_circle_fill_rounded,
+                  iconColor: const Color(0xFF0088FF),
+                  title: 'Suggestions for You',
+                  subtitle: 'Random movie & series picks',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _setExclusiveFilter(nav: 'SUGGESTION');
+                  },
+                ),
+                const SizedBox(height: 10),
+                _buildMoreOptionTile(
+                  glass: glass,
+                  icon: Icons.chat_rounded,
+                  iconColor: badgeGreen,
+                  title: 'Request via WhatsApp',
+                  subtitle: 'ඔයාට බලන්න ඕන Movie / Series එක ඉල්ලන්න',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showWhatsAppRequestDialog(
+                      promptTitle: 'මොනවාද දැනගන්න ඕනා',
+                      hintText:
+                          'Movie / Series / Anime request එක හෝ ප්‍රශ්නය type කරන්න...',
+                    );
+                  },
                 ),
               ],
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(19),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMoreOptionTile({
+    required AuraGlassColors glass,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: glass.glassFill,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: glass.glassBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.16),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top Banner Image + Close (X) Button
-                  SizedBox(
-                    height: 120,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        const CachedPoster(
-                          imageUrl:
-                              'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80',
-                          memCacheWidth: 700,
-                        ),
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withOpacity(0.25),
-                                const Color(0xFF13131A).withOpacity(0.72),
-                                const Color(0xFF13131A),
-                              ],
-                              stops: const [0.0, 0.68, 1.0],
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: 10,
-                          right: 10,
-                          child: Material(
-                            color: Colors.black.withOpacity(0.6),
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () => Navigator.pop(ctx),
-                              child: const Padding(
-                                padding: EdgeInsets.all(7),
-                                child: Icon(
-                                  Icons.close_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: glass.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 2, 18, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: const BoxDecoration(
-                                color: accentOrange,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'AURACINEMA දැනුම්දීමයි',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.4,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Container(
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1B1B24),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white10),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.only(top: 2),
-                                child: Icon(
-                                  Icons.subtitles_rounded,
-                                  color: accentOrange,
-                                  size: 19,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'ඔයාලට Watch now කියන එකෙන් සිංහල subtitle එක්කම බලන්න පුළුවන්.',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.92),
-                                    fontSize: 12.5,
-                                    height: 1.45,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.all(13),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1B1B24),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white10),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.only(top: 2),
-                                child: Icon(
-                                  Icons.download_for_offline_rounded,
-                                  color: accentOrange,
-                                  size: 19,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Watch now player එකේ Settings වලට ගිහින් Captions → Singhalese දාගන්න.',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.92),
-                                    fontSize: 12.5,
-                                    height: 1.45,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: badgeGreen,
-                                  foregroundColor: Colors.white,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(11),
-                                  ),
-                                ),
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const VideoPlayerScreen(
-                                        title: 'AuraCinema Tutorial',
-                                        videoUrl: _tutorialVideoUrl,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  size: 18,
-                                ),
-                                label: const Text(
-                                  'Tutorial',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: accentOrange,
-                                  foregroundColor: Colors.black,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(11),
-                                  ),
-                                ),
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  _showWhatsAppRequestDialog(
-                                    promptTitle: 'මොනවාද දැනගන්න ඕනා',
-                                    hintText: 'ඔයාට දැනගන්න ඕන දේ type කරන්න...',
-                                  );
-                                },
-                                icon: const Icon(
-                                  Icons.chat_rounded,
-                                  size: 17,
-                                ),
-                                label: const Text(
-                                  'Request',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: glass.textSecondary,
+                      fontSize: 11.5,
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAuraNoticePopup() {
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(isDark ? 0.78 : 0.45),
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 420),
+                decoration: BoxDecoration(
+                  color: glass.modalSurface.withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: glass.glassBorder, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isDark ? 0.6 : 0.16),
+                      blurRadius: 28,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: 120,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          const CachedPoster(
+                            imageUrl:
+                                'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80',
+                            memCacheWidth: 700,
+                          ),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withOpacity(0.25),
+                                  glass.modalSurface.withOpacity(0.75),
+                                  glass.modalSurface,
+                                ],
+                                stops: const [0.0, 0.68, 1.0],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 10,
+                            right: 10,
+                            child: GlassPanel(
+                              borderRadius: 999,
+                              blur: 14,
+                              padding: const EdgeInsets.all(7),
+                              onTap: () => Navigator.pop(ctx),
+                              child: Icon(
+                                Icons.close_rounded,
+                                color: glass.textPrimary,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 2, 18, 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const AuraBlueLogo(size: 22),
+                              const SizedBox(width: 8),
+                              Text(
+                                'AURACINEMA දැනුම්දීමයි',
+                                style: TextStyle(
+                                  color: glass.textPrimary,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: glass.glassFill,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: glass.glassBorder),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Icon(
+                                    Icons.subtitles_rounded,
+                                    color: glass.secondaryAccent,
+                                    size: 19,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'ඔයාලට Watch now කියන එකෙන් සිංහල subtitle එක්කම බලන්න පුළුවන්.',
+                                    style: TextStyle(
+                                      color: glass.textPrimary.withOpacity(0.92),
+                                      fontSize: 12.5,
+                                      height: 1.45,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: glass.glassFill,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: glass.glassBorder),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Icon(
+                                    Icons.download_for_offline_rounded,
+                                    color: glass.secondaryAccent,
+                                    size: 19,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Watch now player එකේ Settings වලට ගිහින් Captions → Singhalese දාගන්න.',
+                                    style: TextStyle(
+                                      color: glass.textPrimary.withOpacity(0.92),
+                                      fontSize: 12.5,
+                                      height: 1.45,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: badgeGreen,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const VideoPlayerScreen(
+                                          title: 'AuraCinema Tutorial',
+                                          videoUrl: _tutorialVideoUrl,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.play_circle_fill_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text(
+                                    'Tutorial',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: glass.primaryAccent,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _showWhatsAppRequestDialog(
+                                      promptTitle: 'මොනවාද දැනගන්න ඕනා',
+                                      hintText:
+                                          'ඔයාට දැනගන්න ඕන දේ type කරන්න...',
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.chat_rounded,
+                                    size: 17,
+                                  ),
+                                  label: const Text(
+                                    'Request',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -665,6 +856,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _filterRequestToken++;
     _searchController.clear();
     setState(() {
+      _isSearchOpen = false;
       _selectedNav = 'ALL';
       _selectedLanguage = null;
       _selectedGenre = null;
@@ -683,14 +875,16 @@ class _HomeScreenState extends State<HomeScreen> {
     String hintText = 'Movie / Series / Anime නම type කරන්න...',
   }) {
     final controller = TextEditingController();
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
+
     showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: surfaceDark,
+          backgroundColor: glass.modalSurface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white12),
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: glass.glassBorder),
           ),
           title: Row(
             children: [
@@ -699,8 +893,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Text(
                   promptTitle,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: glass.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
@@ -712,28 +906,32 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: controller,
             autofocus: true,
             maxLines: 2,
-            style: const TextStyle(color: Colors.white, fontSize: 13.5),
-            cursorColor: accentOrange,
+            style: TextStyle(color: glass.textPrimary, fontSize: 13.5),
+            cursorColor: glass.primaryAccent,
             decoration: InputDecoration(
               hintText: hintText,
-              hintStyle: const TextStyle(
-                color: Colors.white38,
+              hintStyle: TextStyle(
+                color: glass.textSecondary,
                 fontSize: 12.5,
               ),
               filled: true,
-              fillColor: chipBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide.none,
+              fillColor: glass.glassFill,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: glass.glassBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: glass.primaryAccent),
               ),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text(
+              child: Text(
                 'Cancel',
-                style: TextStyle(color: Colors.white60),
+                style: TextStyle(color: glass.textSecondary),
               ),
             ),
             ElevatedButton.icon(
@@ -767,11 +965,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showGenrePicker() {
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
     showModalBottomSheet(
       context: context,
-      backgroundColor: surfaceDark,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      backgroundColor: glass.modalSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        side: BorderSide(color: glass.glassBorder),
       ),
       builder: (ctx) {
         return Padding(
@@ -783,10 +983,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Select Genre',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: glass.textPrimary,
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
                     ),
@@ -797,9 +997,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         Navigator.pop(ctx);
                         _goHome();
                       },
-                      child: const Text(
+                      child: Text(
                         'Reset',
-                        style: TextStyle(color: accentOrange),
+                        style: TextStyle(color: glass.primaryAccent),
                       ),
                     ),
                 ],
@@ -813,14 +1013,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   return ChoiceChip(
                     label: Text(g),
                     selected: active,
-                    selectedColor: accentOrange.withOpacity(0.22),
-                    backgroundColor: chipBg,
+                    selectedColor: glass.primaryAccent.withOpacity(0.22),
+                    backgroundColor: glass.glassFill,
                     labelStyle: TextStyle(
-                      color: active ? accentOrange : Colors.white,
+                      color: active ? glass.primaryAccent : glass.textPrimary,
                       fontWeight: active ? FontWeight.w700 : FontWeight.w400,
                     ),
                     side: BorderSide(
-                      color: active ? accentOrange : Colors.white12,
+                      color: active ? glass.primaryAccent : glass.glassBorder,
                     ),
                     onSelected: (_) {
                       Navigator.pop(ctx);
@@ -841,11 +1041,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showYearPicker() {
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
     showModalBottomSheet(
       context: context,
-      backgroundColor: surfaceDark,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      backgroundColor: glass.modalSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        side: BorderSide(color: glass.glassBorder),
       ),
       builder: (ctx) {
         return Padding(
@@ -857,10 +1059,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Select Release Year',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: glass.textPrimary,
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
                     ),
@@ -871,9 +1073,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         Navigator.pop(ctx);
                         _goHome();
                       },
-                      child: const Text(
+                      child: Text(
                         'All Years',
-                        style: TextStyle(color: accentOrange),
+                        style: TextStyle(color: glass.primaryAccent),
                       ),
                     ),
                 ],
@@ -887,14 +1089,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   return ChoiceChip(
                     label: Text(y),
                     selected: active,
-                    selectedColor: accentOrange.withOpacity(0.22),
-                    backgroundColor: chipBg,
+                    selectedColor: glass.primaryAccent.withOpacity(0.22),
+                    backgroundColor: glass.glassFill,
                     labelStyle: TextStyle(
-                      color: active ? accentOrange : Colors.white,
+                      color: active ? glass.primaryAccent : glass.textPrimary,
                       fontWeight: active ? FontWeight.w700 : FontWeight.w400,
                     ),
                     side: BorderSide(
-                      color: active ? accentOrange : Colors.white12,
+                      color: active ? glass.primaryAccent : glass.glassBorder,
                     ),
                     onSelected: (_) {
                       Navigator.pop(ctx);
@@ -912,30 +1114,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
-  }
-
-  void _onNavTap(String item) {
-    if (item == 'GENRE ▾') {
-      _showGenrePicker();
-      return;
-    }
-    if (item == 'YEAR ▾') {
-      _showYearPicker();
-      return;
-    }
-    if (item == 'REQUEST') {
-      _showWhatsAppRequestDialog(
-        promptTitle: 'මොනවාද දැනගන්න ඕනා',
-        hintText: 'Movie / Series / Anime request එක හෝ ප්‍රශ්නය type කරන්න...',
-      );
-      return;
-    }
-
-    if (_selectedNav == item) {
-      _goHome();
-    } else {
-      _setExclusiveFilter(nav: item);
-    }
   }
 
   bool get _isInSpecificCategory =>
@@ -981,7 +1159,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _openDetail(movie);
   }
 
-  Widget _buildLanguageChips() {
+  Widget _buildLanguageChips(AuraGlassColors glass) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
       child: Wrap(
@@ -997,24 +1175,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 _setExclusiveFilter(language: lang);
               }
             },
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
               padding: const EdgeInsets.symmetric(
                 horizontal: 13,
                 vertical: 6,
               ),
               decoration: BoxDecoration(
-                color: isSelected ? accentOrange.withOpacity(0.16) : chipBg,
+                color: isSelected ? glass.primaryAccent : glass.glassFill,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: isSelected ? accentOrange : Colors.white12,
+                  color: isSelected ? glass.primaryAccent : glass.glassBorder,
                 ),
               ),
               child: Text(
                 lang,
                 style: TextStyle(
-                  color: isSelected ? accentOrange : Colors.white70,
+                  color: isSelected ? Colors.white : glass.textSecondary,
                   fontSize: 11.5,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
             ),
@@ -1024,13 +1203,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHeroCarousel() {
+  Widget _buildHeroCarousel(AuraGlassColors glass) {
     if (_heroMovies.isEmpty) return const SizedBox.shrink();
 
     return Column(
       children: [
         SizedBox(
-          height: 205,
+          height: 210,
           child: PageView.builder(
             controller: _heroController,
             itemCount: _heroMovies.length,
@@ -1040,12 +1219,18 @@ class _HomeScreenState extends State<HomeScreen> {
               return Container(
                 margin: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 decoration: BoxDecoration(
-                  color: surfaceDark,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: glass.glassBorder, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: glass.primaryAccent.withOpacity(0.14),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(19),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -1059,9 +1244,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
                             colors: [
-                              Colors.black.withOpacity(0.92),
-                              Colors.black.withOpacity(0.68),
-                              Colors.black.withOpacity(0.25),
+                              const Color(0xFF0B0E17).withOpacity(0.92),
+                              const Color(0xFF0B0E17).withOpacity(0.68),
+                              const Color(0xFF0B0E17).withOpacity(0.28),
                             ],
                           ),
                         ),
@@ -1070,12 +1255,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.all(14),
                         child: Row(
                           children: [
-                            CachedPoster(
-                              imageUrl: m.fullImageUrl,
-                              width: 92,
-                              height: double.infinity,
-                              memCacheWidth: 320,
-                              borderRadius: BorderRadius.circular(10),
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.22),
+                                ),
+                              ),
+                              child: CachedPoster(
+                                imageUrl: m.fullImageUrl,
+                                width: 92,
+                                height: double.infinity,
+                                memCacheWidth: 320,
+                                borderRadius: BorderRadius.circular(11),
+                              ),
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -1085,23 +1278,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                 children: [
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
+                                      horizontal: 9,
+                                      vertical: 3.5,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: accentOrange.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(6),
+                                      color: glass.secondaryAccent
+                                          .withOpacity(0.22),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: glass.secondaryAccent
+                                            .withOpacity(0.45),
+                                      ),
                                     ),
                                     child: Text(
                                       m.type.toUpperCase(),
-                                      style: const TextStyle(
-                                        color: accentOrange,
+                                      style: TextStyle(
+                                        color: glass.secondaryAccent,
                                         fontSize: 10,
                                         fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.4,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 7),
                                   Text(
                                     m.title,
                                     maxLines: 2,
@@ -1113,31 +1312,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                       height: 1.15,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 5),
                                   Text(
                                     m.watchWithSub
                                         ? '${m.displayYear} • Sinhala Sub'
                                         : m.displayYear,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.78),
                                       fontSize: 11.5,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
-                                  const SizedBox(height: 10),
+                                  const SizedBox(height: 11),
                                   ElevatedButton.icon(
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: accentOrange,
-                                      foregroundColor: Colors.black,
+                                      backgroundColor: glass.primaryAccent,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 7,
+                                        horizontal: 15,
+                                        vertical: 8,
                                       ),
                                       minimumSize: Size.zero,
                                       tapTargetSize:
                                           MaterialTapTargetSize.shrinkWrap,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
+                                      shape: const StadiumBorder(),
                                     ),
                                     onPressed: () => _openDetail(m),
                                     icon: const Icon(
@@ -1145,10 +1344,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                       size: 18,
                                     ),
                                     label: const Text(
-                                      'Play & details',
+                                      'Watch Now',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        fontWeight: FontWeight.w800,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ),
@@ -1170,12 +1369,14 @@ class _HomeScreenState extends State<HomeScreen> {
           children: List.generate(_heroMovies.length, (i) {
             final active = i == _heroIndex;
             return AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
+              duration: const Duration(milliseconds: 220),
               margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: active ? 16 : 6,
+              width: active ? 18 : 6,
               height: 6,
               decoration: BoxDecoration(
-                color: active ? accentOrange : Colors.white24,
+                color: active
+                    ? glass.primaryAccent
+                    : glass.textSecondary.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(6),
               ),
             );
@@ -1185,7 +1386,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHorizontalSection(String title, List<Movie> items) {
+  Widget _buildHorizontalSection(
+      String title, List<Movie> items, AuraGlassColors glass) {
     if (items.isEmpty) return const SizedBox.shrink();
 
     return Column(
@@ -1199,15 +1401,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 3.5,
                 height: 18,
                 decoration: BoxDecoration(
-                  color: accentOrange,
+                  color: glass.primaryAccent,
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 title,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: glass.textPrimary,
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1216,7 +1418,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         SizedBox(
-          height: 195,
+          height: 198,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -1233,7 +1435,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildIncompleteTrailersSection() {
+  Widget _buildIncompleteTrailersSection(AuraGlassColors glass) {
     if (_incompleteMovies.isEmpty) return const SizedBox.shrink();
 
     return Column(
@@ -1243,16 +1445,16 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.movie_filter_rounded,
-                color: Color(0xFFF97316),
+                color: glass.secondaryAccent,
                 size: 20,
               ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Watch the Trailers',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: glass.textPrimary,
                   fontSize: 17.5,
                   fontWeight: FontWeight.w800,
                 ),
@@ -1261,7 +1463,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 '(ළඟදීම)',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.55),
+                  color: glass.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -1294,20 +1496,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPaginationBar(int safePage, int totalPages) {
+  Widget _buildPaginationBar(
+      int safePage, int totalPages, AuraGlassColors glass) {
     if (totalPages <= 1) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           OutlinedButton(
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Colors.white24),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              foregroundColor: glass.textPrimary,
+              side: BorderSide(color: glass.glassBorder),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               minimumSize: Size.zero,
+              shape: const StadiumBorder(),
             ),
             onPressed: safePage > 1
                 ? () => setState(() => _currentPage = safePage - 1)
@@ -1323,20 +1527,21 @@ class _HomeScreenState extends State<HomeScreen> {
               child: GestureDetector(
                 onTap: () => setState(() => _currentPage = pageNum),
                 child: Container(
-                  width: 30,
-                  height: 30,
+                  width: 32,
+                  height: 32,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: isCurrent ? accentOrange : surfaceDark,
-                    borderRadius: BorderRadius.circular(8),
+                    color: isCurrent ? glass.primaryAccent : glass.glassFill,
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: isCurrent ? accentOrange : Colors.white12,
+                      color:
+                          isCurrent ? glass.primaryAccent : glass.glassBorder,
                     ),
                   ),
                   child: Text(
                     '$pageNum',
                     style: TextStyle(
-                      color: isCurrent ? Colors.black : Colors.white70,
+                      color: isCurrent ? Colors.white : glass.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1348,10 +1553,11 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 8),
           OutlinedButton(
             style: OutlinedButton.styleFrom(
-              foregroundColor: accentOrange,
-              side: const BorderSide(color: accentOrange),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              foregroundColor: glass.primaryAccent,
+              side: BorderSide(color: glass.primaryAccent),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               minimumSize: Size.zero,
+              shape: const StadiumBorder(),
             ),
             onPressed: safePage < totalPages
                 ? () => setState(() => _currentPage = safePage + 1)
@@ -1365,6 +1571,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final totalPages = (_filteredMovies.length / _pageSize).ceil().clamp(1, 999);
     final safePage = _currentPage.clamp(1, totalPages);
     final startIdx = (safePage - 1) * _pageSize;
@@ -1391,401 +1599,407 @@ class _HomeScreenState extends State<HomeScreen> {
       gridTitle = 'Suggestions for You';
     }
 
-    return Scaffold(
-      backgroundColor: bgDark,
-      body: RefreshIndicator(
-        color: accentOrange,
-        backgroundColor: surfaceDark,
-        onRefresh: _loadHomeData,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              floating: true,
-              backgroundColor: bgDark.withOpacity(0.95),
-              elevation: 0,
-              toolbarHeight: 64,
-              titleSpacing: 12,
-              flexibleSpace: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Colors.white10)),
-                    ),
-                  ),
-                ),
+    return AuraGradientScaffold(
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            color: glass.primaryAccent,
+            backgroundColor: glass.modalSurface,
+            onRefresh: _loadHomeData,
+            child: CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
               ),
-              title: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      _goHome();
-                      _showAuraNoticePopup();
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: accentOrange,
-                            shape: BoxShape.circle,
+              slivers: [
+                SliverAppBar(
+                  pinned: true,
+                  floating: true,
+                  backgroundColor:
+                      glass.backgroundGradient.first.withOpacity(0.78),
+                  elevation: 0,
+                  toolbarHeight: 66,
+                  titleSpacing: 14,
+                  flexibleSpace: ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: glass.glassBorder),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Aura',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        const Text(
-                          'Cinema',
-                          style: TextStyle(
-                            color: accentOrange,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: _searchController,
-                        builder: (context, value, _) {
-                          return TextField(
-                            controller: _searchController,
-                            onChanged: (_) => _applyInstantAndSync(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                            ),
-                            cursorColor: accentOrange,
-                            decoration: InputDecoration(
-                              hintText: 'Search...',
-                              hintStyle: const TextStyle(
-                                color: Colors.white38,
-                                fontSize: 13,
-                              ),
-                              prefixIcon: const Icon(
-                                Icons.search_rounded,
-                                color: Colors.white38,
-                                size: 18,
-                              ),
-                              suffixIcon: value.text.isNotEmpty
-                                  ? GestureDetector(
-                                      onTap: () {
-                                        _searchController.clear();
-                                        _applyInstantAndSync();
-                                      },
-                                      child: const Icon(
-                                        Icons.close_rounded,
-                                        color: Colors.white54,
-                                        size: 16,
-                                      ),
-                                    )
-                                  : null,
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding:
-                                  const EdgeInsets.symmetric(vertical: 9),
-                            ),
-                          );
-                        },
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    tooltip: 'දැනුම්දීම',
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 34, minHeight: 34),
-                    icon: const Icon(
-                      Icons.info_outline_rounded,
-                      color: accentOrange,
-                      size: 20,
-                    ),
-                    onPressed: _showAuraNoticePopup,
-                  ),
-                  if (kDebugMode)
-                    IconButton(
-                      tooltip: 'Admin',
-                      padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 34, minHeight: 34),
-                      icon: const Icon(
-                        Icons.admin_panel_settings_outlined,
-                        color: Colors.white54,
-                        size: 20,
-                      ),
-                      onPressed: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const AdminLoginScreen()),
-                        );
-                        if (mounted) _loadHomeData();
-                      },
-                    ),
-                ],
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Container(
-                height: 44,
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Colors.white10)),
-                ),
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _navItems.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 18),
-                  itemBuilder: (context, index) {
-                    final item = _navItems[index];
-                    final isSelected =
-                        (item == 'MOVIES' &&
-                            _selectedNav == 'MOVIES' &&
-                            _selectedLanguage == null) ||
-                        (item == _selectedNav && item != 'MOVIES') ||
-                        (item == 'GENRE ▾' && _selectedGenre != null) ||
-                        (item == 'YEAR ▾' && _selectedYear != null);
-                    final isRequest = item == 'REQUEST';
-
-                    String displayLabel = item;
-                    if (item == 'GENRE ▾' && _selectedGenre != null) {
-                      displayLabel = '${_selectedGenre!} ▾';
-                    } else if (item == 'YEAR ▾' && _selectedYear != null) {
-                      displayLabel = '${_selectedYear!} ▾';
-                    }
-
-                    return GestureDetector(
-                      onTap: () => _onNavTap(item),
-                      child: Center(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                  title: _isSearchOpen
+                      ? Row(
                           children: [
-                            if (isRequest) ...[
-                              const Icon(
-                                Icons.chat_bubble_outline_rounded,
-                                color: badgeGreen,
-                                size: 14,
-                              ),
-                              const SizedBox(width: 5),
-                            ],
-                            Text(
-                              displayLabel,
-                              style: TextStyle(
-                                color:
-                                    isSelected ? accentOrange : Colors.white70,
-                                fontSize: 12,
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                letterSpacing: 0.4,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            if (_isLoading)
-              const SliverFillRemaining(
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: accentOrange,
-                    strokeWidth: 2.5,
-                  ),
-                ),
-              )
-            else if (_error != null)
-              SliverFillRemaining(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.wifi_off_rounded,
-                          color: Colors.white38,
-                          size: 42,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: accentOrange,
-                            foregroundColor: Colors.black,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          onPressed: _loadHomeData,
-                          child: const Text(
-                            'Retry',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else ...[
-              if (!_isInSpecificCategory && !hasSearchQuery) ...[
-                SliverToBoxAdapter(child: _buildHeroCarousel()),
-                SliverToBoxAdapter(
-                  child: _buildHorizontalSection(
-                      'New on AuraCinema', _latestMovies),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildHorizontalSection('Watch with sub', _subMovies),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildIncompleteTrailersSection(),
-                ),
-              ],
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 3.5,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: accentOrange,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
                             Expanded(
-                              child: Text(
-                                gridTitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
+                              child: Container(
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: glass.glassFill,
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(color: glass.glassBorder),
+                                ),
+                                child: ValueListenableBuilder<TextEditingValue>(
+                                  valueListenable: _searchController,
+                                  builder: (context, value, _) {
+                                    return TextField(
+                                      controller: _searchController,
+                                      focusNode: _searchFocusNode,
+                                      autofocus: true,
+                                      onChanged: (_) => _applyInstantAndSync(),
+                                      style: TextStyle(
+                                        color: glass.textPrimary,
+                                        fontSize: 13.5,
+                                      ),
+                                      cursorColor: glass.primaryAccent,
+                                      decoration: InputDecoration(
+                                        hintText:
+                                            'Search movies, series, anime...',
+                                        hintStyle: TextStyle(
+                                          color: glass.textSecondary,
+                                          fontSize: 13,
+                                        ),
+                                        prefixIcon: Icon(
+                                          Icons.search_rounded,
+                                          color: glass.textSecondary,
+                                          size: 19,
+                                        ),
+                                        suffixIcon: value.text.isNotEmpty
+                                            ? GestureDetector(
+                                                onTap: () {
+                                                  _searchController.clear();
+                                                  _applyInstantAndSync();
+                                                },
+                                                child: Icon(
+                                                  Icons.close_rounded,
+                                                  color: glass.textSecondary,
+                                                  size: 17,
+                                                ),
+                                              )
+                                            : null,
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                vertical: 10),
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 34, minHeight: 34),
+                              icon: Icon(
+                                Icons.close_rounded,
+                                color: glass.textPrimary,
+                                size: 22,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _isSearchOpen = false);
+                                _applyInstantAndSync();
+                              },
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            GestureDetector(
+                              onTap: _goHome,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const AuraBlueLogo(size: 32),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Aura',
+                                    style: TextStyle(
+                                      color: glass.textPrimary,
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Cinema',
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? const Color(0xFF38BDF8)
+                                          : const Color(0xFF0284C7),
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Spacer(),
+                            IconButton(
+                              tooltip: 'Search',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 36, minHeight: 36),
+                              icon: Icon(
+                                Icons.search_rounded,
+                                color: glass.textPrimary,
+                                size: 22,
+                              ),
+                              onPressed: () {
+                                setState(() => _isSearchOpen = true);
+                                WidgetsBinding.instance
+                                    .addPostFrameCallback((_) {
+                                  if (mounted) _searchFocusNode.requestFocus();
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            const AuraThemeToggleButton(),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              tooltip: 'දැනුම්දීම',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 34, minHeight: 34),
+                              icon: Icon(
+                                Icons.info_outline_rounded,
+                                color: glass.secondaryAccent,
+                                size: 21,
+                              ),
+                              onPressed: _showAuraNoticePopup,
+                            ),
+                            if (kDebugMode)
+                              IconButton(
+                                tooltip: 'Admin',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                    minWidth: 34, minHeight: 34),
+                                icon: Icon(
+                                  Icons.admin_panel_settings_outlined,
+                                  color: glass.textSecondary,
+                                  size: 20,
+                                ),
+                                onPressed: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const AdminLoginScreen()),
+                                  );
+                                  if (mounted) _loadHomeData();
+                                },
+                              ),
                           ],
                         ),
+                ),
+                if (_isLoading)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: glass.primaryAccent,
+                        strokeWidth: 2.5,
                       ),
-                      if (_hasActiveFilter)
-                        GestureDetector(
-                          onTap: _goHome,
-                          child: const Text(
-                            'Home',
-                            style: TextStyle(
-                              color: accentOrange,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                    ),
+                  )
+                else if (_error != null)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: GlassPanel(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.wifi_off_rounded,
+                                color: glass.textSecondary,
+                                size: 42,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _error!,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: glass.textSecondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: glass.primaryAccent,
+                                  foregroundColor: Colors.white,
+                                  shape: const StadiumBorder(),
+                                ),
+                                onPressed: _loadHomeData,
+                                child: const Text(
+                                  'Retry',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                else ...[
+                  if (!_isInSpecificCategory && !hasSearchQuery) ...[
+                    SliverToBoxAdapter(child: _buildHeroCarousel(glass)),
+                    SliverToBoxAdapter(
+                      child: _buildHorizontalSection(
+                          'New on AuraCinema', _latestMovies, glass),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildHorizontalSection(
+                          'Watch with sub', _subMovies, glass),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildIncompleteTrailersSection(glass),
+                    ),
+                  ],
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 3.5,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: glass.primaryAccent,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    gridTitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: glass.textPrimary,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              if (_selectedNav == 'MOVIES' || _selectedLanguage != null)
-                SliverToBoxAdapter(child: _buildLanguageChips()),
-              if (pagedMovies.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 40,
+                          if (_hasActiveFilter)
+                            GestureDetector(
+                              onTap: _goHome,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: glass.primaryAccent.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Home',
+                                  style: TextStyle(
+                                    color: glass.primaryAccent,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.movie_filter_outlined,
-                          color: Colors.white30,
-                          size: 42,
+                  ),
+                  if (_selectedNav == 'MOVIES' || _selectedLanguage != null)
+                    SliverToBoxAdapter(child: _buildLanguageChips(glass)),
+                  if (pagedMovies.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 40,
                         ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'මේ filter එකට ගැළපෙන titles හමුවුණේ නෑ.',
-                          style: TextStyle(color: Colors.white70, fontSize: 13),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: accentOrange,
-                            side: const BorderSide(color: accentOrange),
+                        child: GlassPanel(
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.movie_filter_outlined,
+                                color: glass.textSecondary,
+                                size: 42,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'මේ filter එකට ගැළපෙන titles හමුවුණේ නෑ.',
+                                style: TextStyle(
+                                    color: glass.textPrimary, fontSize: 13),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: glass.primaryAccent,
+                                  side: BorderSide(color: glass.primaryAccent),
+                                  shape: const StadiumBorder(),
+                                ),
+                                onPressed: _goHome,
+                                child: const Text('Home'),
+                              ),
+                            ],
                           ),
-                          onPressed: _goHome,
-                          child: const Text('Home'),
                         ),
-                      ],
+                      ),
+                    )
+                  else ...[
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          childAspectRatio: 0.56,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 16,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) =>
+                              _MovieCard(movie: pagedMovies[index]),
+                          childCount: pagedMovies.length,
+                        ),
+                      ),
                     ),
-                  ),
-                )
-              else ...[
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
-                  sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 0.56,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 16,
+                    SliverToBoxAdapter(
+                      child: _buildPaginationBar(safePage, totalPages, glass),
                     ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) =>
-                          _MovieCard(movie: pagedMovies[index]),
-                      childCount: pagedMovies.length,
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildPaginationBar(safePage, totalPages),
-                ),
+                  ],
+                ],
+                // Floating Bottom Navigation Bar එකට යටින් ඉඩ තබන්න
+                const SliverToBoxAdapter(child: SizedBox(height: 105)),
               ],
-            ],
-          ],
-        ),
+            ),
+          ),
+          // Floating Rounded Bottom Navigation Bar (img2 Style)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AuraBottomNavBar(
+              currentIndex: _activeBottomNavIndex,
+              isDarkMode: isDark,
+              onTap: _onBottomNavTap,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1811,7 +2025,7 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
 
   @override
   Widget build(BuildContext context) {
-    const borderOrange = Color(0xFFF97316);
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
     const badgeCrimson = Color(0xFFE11D48);
 
     return GestureDetector(
@@ -1829,19 +2043,21 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF14141B),
-                  borderRadius: BorderRadius.circular(13),
-                  border: Border.all(color: borderOrange, width: 1.5),
+                  color: glass.cardSurface,
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(
+                      color: glass.secondaryAccent.withOpacity(0.75),
+                      width: 1.4),
                   boxShadow: [
                     BoxShadow(
-                      color: borderOrange.withOpacity(0.18),
+                      color: glass.secondaryAccent.withOpacity(0.15),
                       blurRadius: 12,
                       spreadRadius: 1,
                     ),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(11.5),
+                  borderRadius: BorderRadius.circular(13.5),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -1850,7 +2066,7 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
                         memCacheWidth: 340,
                       ),
                       Container(
-                        color: Colors.black.withOpacity(0.68),
+                        color: const Color(0xFF0B0E17).withOpacity(0.72),
                       ),
                       if (widget.movie.episodesCount > 0)
                         Positioned(
@@ -1862,7 +2078,7 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
                               vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.75),
+                              color: Colors.black.withOpacity(0.65),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(color: Colors.white12),
                             ),
@@ -1885,8 +2101,8 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
                               Container(
                                 width: 32,
                                 height: 32,
-                                decoration: const BoxDecoration(
-                                  color: borderOrange,
+                                decoration: BoxDecoration(
+                                  color: glass.secondaryAccent,
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -1927,10 +2143,10 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const Text(
+                                Text(
                                   ' • ',
                                   style: TextStyle(
-                                    color: borderOrange,
+                                    color: glass.secondaryAccent,
                                     fontSize: 9.5,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -1945,25 +2161,25 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF18181F),
+                                          color: Colors.white.withOpacity(0.14),
                                           borderRadius:
                                               BorderRadius.circular(14),
                                           border: Border.all(
                                             color: Colors.white24,
                                           ),
                                         ),
-                                        child: const Row(
+                                        child: Row(
                                           mainAxisAlignment:
                                               MainAxisAlignment.center,
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
                                               Icons.videocam_rounded,
-                                              color: borderOrange,
+                                              color: glass.secondaryAccent,
                                               size: 11,
                                             ),
-                                            SizedBox(width: 4),
-                                            Flexible(
+                                            const SizedBox(width: 4),
+                                            const Flexible(
                                               child: Text(
                                                 'Trailer',
                                                 maxLines: 1,
@@ -1986,8 +2202,8 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
                                       widget.movie.type.toUpperCase(),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: borderOrange,
+                                      style: TextStyle(
+                                        color: glass.secondaryAccent,
                                         fontSize: 9,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -1998,7 +2214,8 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
                             const SizedBox(height: 6),
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 4.5),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 4.5),
                               decoration: BoxDecoration(
                                 color: badgeCrimson,
                                 borderRadius: BorderRadius.circular(7),
@@ -2037,8 +2254,8 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
               widget.movie.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFFFDBA74),
+              style: TextStyle(
+                color: glass.textPrimary,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w600,
                 height: 1.2,
@@ -2064,6 +2281,8 @@ class _MovieCardState extends State<_MovieCard> {
 
   @override
   Widget build(BuildContext context) {
+    final glass = Theme.of(context).extension<AuraGlassColors>()!;
+
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
       onTapUp: (_) => setState(() => _isPressed = false),
@@ -2086,12 +2305,12 @@ class _MovieCardState extends State<_MovieCard> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF14141B),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white10),
+                  color: glass.cardSurface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: glass.glassBorder),
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(13),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -2108,7 +2327,7 @@ class _MovieCardState extends State<_MovieCard> {
                               colors: [
                                 Colors.transparent,
                                 Colors.transparent,
-                                Colors.black.withOpacity(0.9),
+                                Colors.black.withOpacity(0.88),
                               ],
                               stops: const [0.0, 0.58, 1.0],
                             ),
@@ -2125,7 +2344,7 @@ class _MovieCardState extends State<_MovieCard> {
                           ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF10B981),
-                            borderRadius: BorderRadius.circular(5),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           child: const Text(
                             'NEW',
@@ -2152,10 +2371,10 @@ class _MovieCardState extends State<_MovieCard> {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const Text(
+                            Text(
                               ' • ',
                               style: TextStyle(
-                                color: Color(0xFFFF9F1C),
+                                color: glass.secondaryAccent,
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -2167,8 +2386,8 @@ class _MovieCardState extends State<_MovieCard> {
                                     : widget.movie.type.toUpperCase(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Color(0xFFFF9F1C),
+                                style: TextStyle(
+                                  color: glass.secondaryAccent,
                                   fontSize: 9,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -2187,10 +2406,10 @@ class _MovieCardState extends State<_MovieCard> {
               widget.movie.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: glass.textPrimary,
                 fontSize: 11.5,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 height: 1.2,
               ),
             ),

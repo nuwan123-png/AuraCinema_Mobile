@@ -1,14 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'theme/aura_theme.dart';
 import 'screens/home_screen.dart';
 
 void main() {
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
   runApp(const AuraCinemaApp());
 }
 
@@ -17,13 +11,18 @@ class AuraCinemaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AuraCinema',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0B0B0F),
-      ),
-      home: const HomeScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: auraThemeNotifier,
+      builder: (context, currentMode, _) {
+        return MaterialApp(
+          title: 'AuraCinema',
+          debugShowCheckedModeBanner: false,
+          theme: AuraAppTheme.lightTheme,
+          darkTheme: AuraAppTheme.darkTheme,
+          themeMode: currentMode,
+          home: const HomeScreen(),
+        );
+      },
     );
   }
 }
