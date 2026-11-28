@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/watch_history_service.dart';
+import '../services/watchlist_service.dart';
 
 class UserAuthScreen extends StatefulWidget {
   const UserAuthScreen({super.key});
@@ -11,15 +12,21 @@ class UserAuthScreen extends StatefulWidget {
 }
 
 class _UserAuthScreenState extends State<UserAuthScreen> {
+  static const Color _heartRose = Color(0xFFF43F5E);
+
   final AuthService _authService = AuthService();
   final WatchHistoryService _historyService = WatchHistoryService();
+  final WatchlistService _watchlistService = WatchlistService();
 
   bool _isLogin = true;
   bool _isLoading = false;
-  bool _isHistoryLoading = false;
+  bool _isDataLoading = false;
   bool _obscurePassword = true;
+  int _profileTab = 0; // 0 = Watchlist, 1 = Watch History
+
   UserProfile? _loggedInUser;
   List<WatchHistoryItem> _historyItems = [];
+  List<WatchlistItem> _watchlistItems = [];
 
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -38,19 +45,35 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
     if (isLoggedIn && user != null) {
       setState(() {
         _loggedInUser = user;
-        _isHistoryLoading = true;
+        _isDataLoading = true;
       });
-      await _loadUserHistory();
+      await _loadProfileLists();
     }
   }
 
-  Future<void> _loadUserHistory() async {
-    final items = await _historyService.fetchHistory();
+  Future<void> _loadProfileLists() async {
+    final results = await Future.wait([
+      _watchlistService.fetchWatchlist(),
+      _historyService.fetchHistory(),
+    ]);
     if (!mounted) return;
     setState(() {
-      _historyItems = items;
-      _isHistoryLoading = false;
+      _watchlistItems = results[0] as List<WatchlistItem>;
+      _historyItems = results[1] as List<WatchHistoryItem>;
+      _isDataLoading = false;
     });
+  }
+
+  Future<void> _removeWatchlistItem(WatchlistItem item) async {
+    final res = await _watchlistService.toggleWatchlist(
+      movieId: item.movieId,
+      title: item.title,
+    );
+    if (res == false && mounted) {
+      setState(() {
+        _watchlistItems.removeWhere((e) => e.movieId == item.movieId);
+      });
+    }
   }
 
   Future<void> _removeHistoryItem(int id) async {
@@ -117,6 +140,7 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
     setState(() {
       _loggedInUser = null;
       _historyItems = [];
+      _watchlistItems = [];
       _isLoading = false;
     });
     _showMessage('Account එකෙන් Logout වුණා.');
@@ -178,7 +202,7 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
       children: [
         // Glassmorphism Profile Header Card
         Container(
-          margin: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: const Color(0xFF131B2E),
@@ -188,12 +212,12 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
           child: Row(
             children: [
               CircleAvatar(
-                radius: 30,
+                radius: 28,
                 backgroundColor: const Color(0xFF2563EB),
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : 'A',
                   style: const TextStyle(
-                    fontSize: 26,
+                    fontSize: 24,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
@@ -214,7 +238,7 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
                     Text(
                       email,
                       maxLines: 1,
@@ -224,25 +248,6 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
                         fontSize: 12.5,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF38BDF8).withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Watched: ${_historyItems.length} titles',
-                        style: const TextStyle(
-                          color: Color(0xFF38BDF8),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -250,176 +255,106 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
           ),
         ),
 
-        // Watch History Section Title
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+        // Watchlist / Watch History Switcher Tabs
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF131B2E),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white10),
+          ),
           child: Row(
             children: [
-              Container(
-                width: 3.5,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF38BDF8),
-                  borderRadius: BorderRadius.circular(4),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _profileTab = 0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _profileTab == 0
+                          ? const Color(0xFF2563EB)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.favorite_rounded,
+                          size: 15,
+                          color: _profileTab == 0 ? Colors.white : _heartRose,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Watchlist (${_watchlistItems.length})',
+                          style: TextStyle(
+                            color: _profileTab == 0
+                                ? Colors.white
+                                : Colors.white70,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Text(
-                'My Watch History',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _profileTab = 1),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _profileTab == 1
+                          ? const Color(0xFF2563EB)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.history_rounded,
+                          size: 16,
+                          color: _profileTab == 1
+                              ? Colors.white
+                              : const Color(0xFF38BDF8),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'History (${_historyItems.length})',
+                          style: TextStyle(
+                            color: _profileTab == 1
+                                ? Colors.white
+                                : Colors.white70,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
         ),
 
-        // Watch History List
+        // Tab Body
         Expanded(
-          child: _isHistoryLoading
+          child: _isDataLoading
               ? const Center(
                   child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
                 )
-              : _historyItems.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.history_toggle_off_rounded,
-                              size: 46,
-                              color: Colors.white.withValues(alpha: 0.35),
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'ඔයා තවම movies කිසිවක් බලලා නැහැ.',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : RefreshIndicator(
-                      color: const Color(0xFF38BDF8),
-                      onRefresh: _loadUserHistory,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                        itemCount: _historyItems.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          final item = _historyItems[index];
-                          final progress = (item.durationSeconds > 0)
-                              ? (item.positionSeconds / item.durationSeconds)
-                                  .clamp(0.04, 1.0)
-                                  .toDouble()
-                              : 0.0;
-
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(14),
-                            onTap: () => Navigator.pop(context, item),
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF131B2E),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Colors.white10),
-                              ),
-                              child: Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(9),
-                                    child: item.posterUrl.isNotEmpty
-                                        ? CachedNetworkImage(
-                                            imageUrl: item.posterUrl,
-                                            width: 58,
-                                            height: 82,
-                                            fit: BoxFit.cover,
-                                            errorWidget: (_, __, ___) =>
-                                                _posterPlaceholder(),
-                                          )
-                                        : _posterPlaceholder(),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          item.title,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          item.episodeId > 0
-                                              ? '${item.type.toUpperCase()} • EP ${item.episodeId}'
-                                              : item.type.toUpperCase(),
-                                          style: const TextStyle(
-                                            color: Color(0xFF38BDF8),
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        if (item.positionSeconds > 0) ...[
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            item.durationSeconds > 0
-                                                ? '${_formatSeconds(item.positionSeconds)} / ${_formatSeconds(item.durationSeconds)}'
-                                                : 'Stopped at ${_formatSeconds(item.positionSeconds)}',
-                                            style: const TextStyle(
-                                              color: Colors.white54,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 5),
-                                          ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(4),
-                                            child: LinearProgressIndicator(
-                                              value: progress,
-                                              minHeight: 4,
-                                              backgroundColor: Colors.white12,
-                                              valueColor:
-                                                  const AlwaysStoppedAnimation<
-                                                      Color>(
-                                                Color(0xFF38BDF8),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Remove',
-                                    icon: const Icon(
-                                      Icons.delete_outline_rounded,
-                                      color: Colors.white54,
-                                      size: 20,
-                                    ),
-                                    onPressed: () =>
-                                        _removeHistoryItem(item.id),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+              : RefreshIndicator(
+                  color: const Color(0xFF38BDF8),
+                  onRefresh: _loadProfileLists,
+                  child: _profileTab == 0
+                      ? _buildWatchlistBody()
+                      : _buildHistoryBody(),
+                ),
         ),
 
         // Bottom Logout Button
@@ -452,10 +387,234 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
     );
   }
 
+  Widget _buildWatchlistBody() {
+    if (_watchlistItems.isEmpty) {
+      return ListView(
+        children: [
+          const SizedBox(height: 60),
+          Icon(
+            Icons.favorite_border_rounded,
+            size: 46,
+            color: Colors.white.withValues(alpha: 0.35),
+          ),
+          const SizedBox(height: 10),
+          const Center(
+            child: Text(
+              'ඔයා තවම Watchlist එකට movies එකතු කරලා නැහැ.',
+              style: TextStyle(color: Colors.white70, fontSize: 13.5),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      itemCount: _watchlistItems.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final item = _watchlistItems[index];
+        return InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.pop(context, item),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131B2E),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: item.posterUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterUrl,
+                          width: 56,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _posterPlaceholder(),
+                        )
+                      : _posterPlaceholder(),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        item.year.isNotEmpty
+                            ? '${item.type.toUpperCase()} • ${item.year}'
+                            : item.type.toUpperCase(),
+                        style: const TextStyle(
+                          color: Color(0xFF38BDF8),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Remove',
+                  icon: const Icon(
+                    Icons.favorite_rounded,
+                    color: _heartRose,
+                    size: 21,
+                  ),
+                  onPressed: () => _removeWatchlistItem(item),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryBody() {
+    if (_historyItems.isEmpty) {
+      return ListView(
+        children: [
+          const SizedBox(height: 60),
+          Icon(
+            Icons.history_toggle_off_rounded,
+            size: 46,
+            color: Colors.white.withValues(alpha: 0.35),
+          ),
+          const SizedBox(height: 10),
+          const Center(
+            child: Text(
+              'ඔයා තවම movies කිසිවක් බලලා නැහැ.',
+              style: TextStyle(color: Colors.white70, fontSize: 13.5),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      itemCount: _historyItems.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final item = _historyItems[index];
+        final progress = (item.durationSeconds > 0)
+            ? (item.positionSeconds / item.durationSeconds)
+                .clamp(0.04, 1.0)
+                .toDouble()
+            : 0.0;
+
+        return InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.pop(context, item),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131B2E),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: item.posterUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterUrl,
+                          width: 56,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _posterPlaceholder(),
+                        )
+                      : _posterPlaceholder(),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item.episodeId > 0
+                            ? '${item.type.toUpperCase()} • EP ${item.episodeId}'
+                            : item.type.toUpperCase(),
+                        style: const TextStyle(
+                          color: Color(0xFF38BDF8),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (item.positionSeconds > 0) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          item.durationSeconds > 0
+                              ? '${_formatSeconds(item.positionSeconds)} / ${_formatSeconds(item.durationSeconds)}'
+                              : 'Stopped at ${_formatSeconds(item.positionSeconds)}',
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 4,
+                            backgroundColor: Colors.white12,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Color(0xFF38BDF8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Remove',
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.white54,
+                    size: 20,
+                  ),
+                  onPressed: () => _removeHistoryItem(item.id),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _posterPlaceholder() {
     return Container(
-      width: 58,
-      height: 82,
+      width: 56,
+      height: 80,
       color: const Color(0xFF0A0E17),
       child: const Icon(Icons.movie, color: Colors.white38),
     );
@@ -480,8 +639,8 @@ class _UserAuthScreenState extends State<UserAuthScreen> {
           const SizedBox(height: 8),
           Text(
             _isLogin
-                ? 'ඔයා බලපු movies සහ භාගෙට නතර කරපු තැන් save කරගන්න log වෙන්න.'
-                : 'නොමිලේ account එකක් හදලා ඔයාගේ Watch History save කරගන්න.',
+                ? 'ඔයා බලපු movies සහ Watchlist එක save කරගන්න log වෙන්න.'
+                : 'නොමිලේ account එකක් හදලා ඔයාගේ Watchlist සහ History save කරගන්න.',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),

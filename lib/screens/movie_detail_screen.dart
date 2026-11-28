@@ -4,8 +4,11 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../models/movie_detail_model.dart';
 import '../models/movie_model.dart';
+import '../services/auth_service.dart';
+import '../services/watchlist_service.dart';
 import '../theme/aura_theme.dart';
 import '../widgets/glass_widgets.dart';
+import 'user_auth_screen.dart';
 import 'video_player_screen.dart';
 
 class MovieDetailScreen extends StatefulWidget {
@@ -24,15 +27,70 @@ class MovieDetailScreen extends StatefulWidget {
 
 class _MovieDetailScreenState extends State<MovieDetailScreen> {
   static const Color badgeGreen = Color(0xFF10B981);
+  static const Color heartRose = Color(0xFFF43F5E);
+
+  final AuthService _authService = AuthService();
+  final WatchlistService _watchlistService = WatchlistService();
 
   MovieDetail? _detail;
   bool _isLoading = true;
+  bool _isInWatchlist = false;
+  bool _isTogglingWatchlist = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _fetchDetails();
+    _checkWatchlistStatus();
+  }
+
+  Future<void> _checkWatchlistStatus() async {
+    final inList = await _watchlistService.isInWatchlist(widget.movie.id);
+    if (mounted) {
+      setState(() => _isInWatchlist = inList);
+    }
+  }
+
+  Future<void> _handleToggleWatchlist() async {
+    if (_isTogglingWatchlist) return;
+
+    final loggedIn = await _authService.isUserLoggedIn();
+    if (!loggedIn) {
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const UserAuthScreen()),
+      );
+      if (mounted) await _checkWatchlistStatus();
+      return;
+    }
+
+    setState(() => _isTogglingWatchlist = true);
+    final result = await _watchlistService.toggleWatchlist(
+      movieId: widget.movie.id,
+      title: widget.movie.title,
+      posterUrl: widget.movie.fullImageUrl,
+      type: widget.movie.type,
+      year: widget.movie.displayYear,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _isTogglingWatchlist = false;
+      if (result != null) _isInWatchlist = result;
+    });
+
+    if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result ? 'Watchlist එකට එකතු කළා!' : 'Watchlist එකෙන් ඉවත් කළා.',
+          ),
+          duration: const Duration(milliseconds: 1400),
+        ),
+      );
+    }
   }
 
   Future<void> _fetchDetails() async {
@@ -42,7 +100,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     });
 
     try {
-            final uri = Uri.parse(
+      final uri = Uri.parse(
         'https://auracinema.duckdns.org/api/v1/movies/${widget.movie.id}',
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 15));
@@ -119,7 +177,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
           SliverAppBar(
             expandedHeight: 340,
             pinned: true,
-            backgroundColor: bgBase.withOpacity(0.85),
+            backgroundColor: bgBase.withValues(alpha: 0.85),
             foregroundColor: glass.textPrimary,
             leading: Padding(
               padding: const EdgeInsets.all(8.0),
@@ -137,8 +195,26 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                 ),
               ),
             ),
-            actions: const [
+            actions: [
               Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Center(
+                  child: GlassPanel(
+                    borderRadius: 999,
+                    blur: 16,
+                    padding: const EdgeInsets.all(9),
+                    onTap: _handleToggleWatchlist,
+                    child: Icon(
+                      _isInWatchlist
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: _isInWatchlist ? heartRose : glass.textPrimary,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+              const Padding(
                 padding: EdgeInsets.only(right: 12),
                 child: Center(child: AuraThemeToggleButton()),
               ),
@@ -159,9 +235,9 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withOpacity(0.32),
+                          Colors.black.withValues(alpha: 0.32),
                           Colors.transparent,
-                          bgBase.withOpacity(0.88),
+                          bgBase.withValues(alpha: 0.88),
                           bgBase,
                         ],
                         stops: const [0.0, 0.4, 0.85, 1.0],
@@ -210,10 +286,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                   'SINHALA SUB', badgeGreen, Colors.white),
                             _buildTag(
                               widget.movie.type.toUpperCase(),
-                              glass.secondaryAccent.withOpacity(0.18),
+                              glass.secondaryAccent.withValues(alpha: 0.18),
                               glass.secondaryAccent,
                               borderColor:
-                                  glass.secondaryAccent.withOpacity(0.45),
+                                  glass.secondaryAccent.withValues(alpha: 0.45),
                             ),
                           ],
                         ),
@@ -290,6 +366,44 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                             ],
                           ),
                         ],
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor:
+                                  _isInWatchlist ? heartRose : glass.textPrimary,
+                              side: BorderSide(
+                                color: _isInWatchlist
+                                    ? heartRose.withValues(alpha: 0.65)
+                                    : glass.glassBorder,
+                              ),
+                              backgroundColor: _isInWatchlist
+                                  ? heartRose.withValues(alpha: 0.14)
+                                  : glass.glassFill,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: const StadiumBorder(),
+                            ),
+                            onPressed: _handleToggleWatchlist,
+                            icon: Icon(
+                              _isInWatchlist
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              color:
+                                  _isInWatchlist ? heartRose : glass.secondaryAccent,
+                              size: 20,
+                            ),
+                            label: Text(
+                              _isInWatchlist
+                                  ? 'In Watchlist'
+                                  : 'Add to Watchlist',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -346,7 +460,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                 side: BorderSide(
                                   color: isTg
                                       ? Colors.transparent
-                                      : badgeGreen.withOpacity(0.5),
+                                      : badgeGreen.withValues(alpha: 0.5),
                                 ),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,
@@ -376,8 +490,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                 foregroundColor: glass.textPrimary,
                                 elevation: 0,
                                 side: BorderSide(
-                                  color:
-                                      glass.secondaryAccent.withOpacity(0.55),
+                                  color: glass.secondaryAccent
+                                      .withValues(alpha: 0.55),
                                 ),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,
@@ -425,7 +539,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                               ),
                               leading: CircleAvatar(
                                 backgroundColor:
-                                    glass.primaryAccent.withOpacity(0.18),
+                                    glass.primaryAccent.withValues(alpha: 0.18),
                                 child: Text(
                                   '${ep.number}',
                                   style: TextStyle(
@@ -524,7 +638,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                         child: Text(
                           detail.description!,
                           style: TextStyle(
-                            color: glass.textPrimary.withOpacity(0.88),
+                            color: glass.textPrimary.withValues(alpha: 0.88),
                             fontSize: 13.5,
                             height: 1.55,
                           ),
