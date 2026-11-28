@@ -17,6 +17,7 @@ import 'admin_login_screen.dart';
 import 'movie_detail_screen.dart';
 import 'user_auth_screen.dart';
 import 'video_player_screen.dart';
+import '../widgets/app_update_notice.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1655,7 +1656,7 @@ class _HomeScreenState extends State<HomeScreen> {
       gridTitle = 'Suggestions for You';
     }
 
-    return AuraGradientScaffold(
+return AuraGradientScaffold(
       body: Stack(
         children: [
           RefreshIndicator(
@@ -1873,7 +1874,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   _handleContinueWatchingTap(result);
                                 }
                               },
-                                                          ),
+                            ),
                             if (kDebugMode)
                               IconButton(
                                 tooltip: 'Admin',
@@ -1951,6 +1952,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 else ...[
                   if (!_isInSpecificCategory && !hasSearchQuery) ...[
+                    const SliverToBoxAdapter(child: AppUpdateNoticeBanner()),
                     SliverToBoxAdapter(child: _buildHeroCarousel(glass)),
                     SliverToBoxAdapter(
                       child: ContinueWatchingSection(
