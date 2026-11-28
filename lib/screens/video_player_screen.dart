@@ -6,17 +6,28 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../services/watch_history_service.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
   final String title;
   final String videoUrl;
   final String? subtitleUrl;
+  final int? movieId;
+  final int episodeId;
+  final String? posterUrl;
+  final String type;
+  final int initialPositionSeconds;
 
   const VideoPlayerScreen({
     super.key,
     required this.title,
     required this.videoUrl,
     this.subtitleUrl,
+    this.movieId,
+    this.episodeId = 0,
+    this.posterUrl,
+    this.type = 'movie',
+    this.initialPositionSeconds = 0,
   });
 
   @override
@@ -24,6 +35,8 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  final WatchHistoryService _watchHistoryService = WatchHistoryService();
+
   WebViewController? _webController;
   VideoPlayerController? _nativeController;
 
@@ -40,8 +53,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Timer? _extractTimer;
   Timer? _hideControlsTimer;
+  Timer? _progressSyncTimer;
   int _extractAttempts = 0;
   bool _isTryingNativeInit = false;
+  bool _hasRecordedInitialWatch = false;
+  int _lastSavedPositionSec = -1;
 
   static const Color _accentOrange = Color(0xFFFF9F1C);
   static const Color _bgDark = Color(0xFF0B0B0F);
@@ -121,6 +137,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   void initState() {
     super.initState();
     _targetUrl = _resolvedUrl(widget.videoUrl);
+    _recordInitialWatch();
 
     if (_isDirectVideoFile(_targetUrl)) {
       _initNativePlayer(_targetUrl);
@@ -131,12 +148,65 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
+  void _recordInitialWatch() {
+    final movieId = widget.movieId;
+    if (movieId == null || movieId <= 0 || _hasRecordedInitialWatch) return;
+    _hasRecordedInitialWatch = true;
+
+    unawaited(
+      _watchHistoryService.saveProgress(
+        movieId: movieId,
+        episodeId: widget.episodeId,
+        title: widget.title,
+        posterUrl: widget.posterUrl,
+        type: widget.type,
+        positionSeconds: widget.initialPositionSeconds,
+      ),
+    );
+  }
+
+  void _startProgressSyncTimer() {
+    _progressSyncTimer?.cancel();
+    if (widget.movieId == null || widget.movieId! <= 0) return;
+
+    _progressSyncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      final c = _nativeController;
+      if (mounted && c != null && c.value.isInitialized && c.value.isPlaying) {
+        unawaited(_syncNativeProgress());
+      }
+    });
+  }
+
+  Future<void> _syncNativeProgress({bool force = false}) async {
+    final movieId = widget.movieId;
+    final c = _nativeController;
+    if (movieId == null || movieId <= 0 || c == null || !c.value.isInitialized) {
+      return;
+    }
+
+    final posSec = c.value.position.inSeconds;
+    final durSec = c.value.duration.inSeconds;
+    if (!force && (posSec - _lastSavedPositionSec).abs() < 5) {
+      return;
+    }
+
+    _lastSavedPositionSec = posSec;
+    await _watchHistoryService.saveProgress(
+      movieId: movieId,
+      episodeId: widget.episodeId,
+      title: widget.title,
+      posterUrl: widget.posterUrl,
+      type: widget.type,
+      positionSeconds: posSec,
+      durationSeconds: durSec,
+    );
+  }
+
   Future<void> _loadSubtitlesInBackground({
     String? inlineSubText,
     String? streamtapeSubUrl,
     Map<String, String>? headers,
   }) async {
-    // 1. Streamtape page එකෙන් කෙළින්ම ගත්ත subtitle text එක තියෙනවා නම් එය parse කරන්න
     if (inlineSubText != null && inlineSubText.trim().isNotEmpty) {
       final cues = _parseSubtitles(inlineSubText);
       if (cues.isNotEmpty && mounted) {
@@ -145,7 +215,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       }
     }
 
-    // 2. Admin panel subtitle_url හෝ Streamtape track URL එකෙන් download කරන්න
     final candidates = <String>[
       if (widget.subtitleUrl != null && widget.subtitleUrl!.trim().isNotEmpty)
         _resolvedUrl(widget.subtitleUrl!),
@@ -299,7 +368,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       _extractTimer?.cancel();
       _webController?.loadRequest(Uri.parse('about:blank'));
 
-      // Video එක මුලින්ම ක්ෂණිකව play කරන්න
+      // Bageta balapu thanak thiyenawa nam ethanata seek karanawa
+      if (widget.initialPositionSeconds > 0) {
+        final totalSec = controller.value.duration.inSeconds;
+        if (totalSec == 0 || widget.initialPositionSeconds < totalSec - 5) {
+          await controller.seekTo(
+            Duration(seconds: widget.initialPositionSeconds),
+          );
+        }
+      }
+
       setState(() {
         _nativeController = controller;
         _useNativePlayer = true;
@@ -309,8 +387,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
       await controller.play();
       _startHideControlsTimer();
+      _startProgressSyncTimer();
 
-      // Subtitles background එකෙන් load කරන්න (UI එක block නොවී)
       unawaited(
         _loadSubtitlesInBackground(
           inlineSubText: inlineSubText,
@@ -457,9 +535,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           },
         );
       }
-    } catch (_) {
-      // Ignore while DOM is loading
-    }
+    } catch (_) {}
   }
 
   void _initWebView(String urlToLoad) {
@@ -657,6 +733,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     if (target > max) target = max;
     await c.seekTo(target);
     _startHideControlsTimer();
+    unawaited(_syncNativeProgress(force: true));
   }
 
   Future<void> _cycleSpeed() async {
@@ -683,8 +760,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             position.inMilliseconds.clamp(0, totalMs > 0 ? totalMs : 1);
         final hasSub = _subtitleCues.isNotEmpty;
         final isSubActive = hasSub && _subtitlesEnabled;
-        final captionText =
-            isSubActive ? _findCurrentCaption(position) : '';
+        final captionText = isSubActive ? _findCurrentCaption(position) : '';
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -703,7 +779,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 const Center(
                   child: CircularProgressIndicator(color: _accentOrange),
                 ),
-              // Sinhala Subtitle Overlay
               if (captionText.isNotEmpty)
                 Positioned(
                   left: 18,
@@ -868,6 +943,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                                   if (value.isPlaying) {
                                     await controller.pause();
                                     _hideControlsTimer?.cancel();
+                                    unawaited(_syncNativeProgress(force: true));
                                   } else {
                                     await controller.play();
                                     _startHideControlsTimer();
@@ -912,6 +988,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                                     );
                                     _startHideControlsTimer();
                                   },
+                                  onChangeEnd: (_) {
+                                    unawaited(_syncNativeProgress(force: true));
+                                  },
                                 ),
                               ),
                               Row(
@@ -925,7 +1004,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                                     ),
                                   ),
                                   const Spacer(),
-                                  // CC (Subtitles) Toggle Button
                                   GestureDetector(
                                     onTap: _toggleSubtitles,
                                     child: Container(
@@ -1049,6 +1127,26 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   void dispose() {
     _extractTimer?.cancel();
     _hideControlsTimer?.cancel();
+    _progressSyncTimer?.cancel();
+
+    final movieId = widget.movieId;
+    final c = _nativeController;
+    if (movieId != null && movieId > 0 && c != null && c.value.isInitialized) {
+      final posSec = c.value.position.inSeconds;
+      final durSec = c.value.duration.inSeconds;
+      unawaited(
+        _watchHistoryService.saveProgress(
+          movieId: movieId,
+          episodeId: widget.episodeId,
+          title: widget.title,
+          posterUrl: widget.posterUrl,
+          type: widget.type,
+          positionSeconds: posSec,
+          durationSeconds: durSec,
+        ),
+      );
+    }
+
     _nativeController?.dispose();
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

@@ -10,8 +10,13 @@ import 'video_player_screen.dart';
 
 class MovieDetailScreen extends StatefulWidget {
   final Movie movie;
+  final int initialPositionSeconds;
 
-  const MovieDetailScreen({super.key, required this.movie});
+  const MovieDetailScreen({
+    super.key,
+    required this.movie,
+    this.initialPositionSeconds = 0,
+  });
 
   @override
   State<MovieDetailScreen> createState() => _MovieDetailScreenState();
@@ -37,7 +42,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     });
 
     try {
-      final uri = Uri.parse(
+            final uri = Uri.parse(
         'https://auracinema.duckdns.org/api/v1/movies/${widget.movie.id}',
       );
       final response = await http.get(uri).timeout(const Duration(seconds: 15));
@@ -70,7 +75,16 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     }
   }
 
-  void _openPlayer(String title, String url, {String? subtitleUrl}) {
+  void _openPlayer(
+    String title,
+    String url, {
+    String? subtitleUrl,
+    int? movieId,
+    int episodeId = 0,
+    String? posterUrl,
+    String type = 'movie',
+    int initialPositionSeconds = 0,
+  }) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -78,6 +92,11 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
           title: title,
           videoUrl: url,
           subtitleUrl: subtitleUrl,
+          movieId: movieId,
+          episodeId: episodeId,
+          posterUrl: posterUrl,
+          type: type,
+          initialPositionSeconds: initialPositionSeconds,
         ),
       ),
     );
@@ -159,7 +178,6 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Frosted Glass Hero Info Panel
                   GlassPanel(
                     borderRadius: 24,
                     blur: 24,
@@ -222,12 +240,19 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                       detail.title,
                                       detail.watchUrl!,
                                       subtitleUrl: detail.fullSubtitleUrl,
+                                      movieId: widget.movie.id,
+                                      posterUrl: widget.movie.fullImageUrl,
+                                      type: widget.movie.type,
+                                      initialPositionSeconds:
+                                          widget.initialPositionSeconds,
                                     ),
                                     icon: const Icon(Icons.play_arrow_rounded,
                                         size: 24),
-                                    label: const Text(
-                                      'Watch Now',
-                                      style: TextStyle(
+                                    label: Text(
+                                      widget.initialPositionSeconds > 0
+                                          ? 'Resume'
+                                          : 'Watch Now',
+                                      style: const TextStyle(
                                           fontWeight: FontWeight.w800,
                                           fontSize: 15),
                                     ),
@@ -393,6 +418,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                 '${detail.title} - EP ${ep.number}',
                                 ep.url,
                                 subtitleUrl: ep.subtitleUrl,
+                                movieId: widget.movie.id,
+                                episodeId: ep.number,
+                                posterUrl: widget.movie.fullImageUrl,
+                                type: widget.movie.type,
                               ),
                               leading: CircleAvatar(
                                 backgroundColor:
@@ -421,6 +450,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                                       '${detail.title} - EP ${ep.number}',
                                       ep.url,
                                       subtitleUrl: ep.subtitleUrl,
+                                      movieId: widget.movie.id,
+                                      episodeId: ep.number,
+                                      posterUrl: widget.movie.fullImageUrl,
+                                      type: widget.movie.type,
                                     ),
                                   ),
                                   if (ep.subtitleUrl != null &&

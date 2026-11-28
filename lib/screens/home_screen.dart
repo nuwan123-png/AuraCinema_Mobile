@@ -4,14 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/movie_model.dart';
+import '../services/auth_service.dart';
+import '../services/watch_history_service.dart';
 import '../services/movie_service.dart';
 import '../theme/aura_theme.dart';
 import '../widgets/aura_blue_logo.dart';
 import '../widgets/aura_bottom_nav.dart';
 import '../widgets/cached_poster.dart';
+import '../widgets/continue_watching_section.dart';
 import '../widgets/glass_widgets.dart';
 import 'admin_login_screen.dart';
 import 'movie_detail_screen.dart';
+import 'user_auth_screen.dart';
 import 'video_player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -23,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final MovieService _movieService = MovieService();
+  final AuthService _authService = AuthService();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final PageController _heroController = PageController();
@@ -43,6 +48,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _isLoading = true;
   bool _isSearchOpen = false;
+  bool _isUserLoggedIn = false;
+  String? _userInitial;
+  int _historyRefreshKey = 0;
+
   String? _error;
   int _heroIndex = 0;
   int _currentPage = 1;
@@ -93,6 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _refreshUserAuthState();
     _loadHomeData();
     _startHeroAutoSlide();
 
@@ -102,6 +112,17 @@ class _HomeScreenState extends State<HomeScreen> {
         if (mounted) _showAuraNoticePopup();
       });
     }
+  }
+
+  Future<void> _refreshUserAuthState() async {
+    final loggedIn = await _authService.isUserLoggedIn();
+    final user = loggedIn ? await _authService.getCurrentUser() : null;
+    final name = user?.name.trim() ?? '';    if (!mounted) return;
+    setState(() {
+      _isUserLoggedIn = loggedIn;
+      _userInitial = name.isNotEmpty ? name[0].toUpperCase() : null;
+      _historyRefreshKey++;
+    });
   }
 
   @override
@@ -216,7 +237,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: _selectedYear != null
                       ? 'Release Year ($_selectedYear)'
                       : 'Release Year',
-                  subtitle: 'Filter by release year (2000 - ${DateTime.now().year + 1})',
+                  subtitle:
+                      'Filter by release year (2000 - ${DateTime.now().year + 1})',
                   onTap: () {
                     Navigator.pop(ctx);
                     _showYearPicker();
@@ -630,6 +652,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _historyRefreshKey++;
     });
 
     try {
@@ -662,7 +685,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final heroes =
           heroesRaw.isNotEmpty ? heroesRaw : combinedAll.take(5).toList();
       final subList = subRaw.isNotEmpty
-          ? subRaw
+          ? subListFrom(subRaw)
           : combinedAll.where((m) => m.watchWithSub).toList();
 
       final incompleteList = incompleteFromLaravel.isNotEmpty
@@ -693,6 +716,8 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
   }
+
+  List<Movie> subListFrom(List<Movie> source) => source;
 
   bool _matchesLanguage(Movie movie, String lang) {
     final l = lang.toLowerCase().trim();
@@ -831,9 +856,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _currentPage = 1;
           });
         }
-      } catch (_) {
-        // Silent background sync
-      }
+      } catch (_) {}
     });
   }
 
@@ -1125,11 +1148,38 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _hasActiveFilter =>
       _isInSpecificCategory || _searchController.text.trim().isNotEmpty;
 
-  void _openDetail(Movie movie) {
-    Navigator.push(
+  Future<void> _openDetail(Movie movie) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => MovieDetailScreen(movie: movie)),
     );
+    if (mounted) {
+      setState(() => _historyRefreshKey++);
+    }
+  }
+
+  void _handleContinueWatchingTap(WatchHistoryItem item) {
+  final movieId = item.movieId;
+  if (movieId <= 0) return;
+
+    Movie? matched;
+    for (final m in _allMovies) {
+      if (m.id == movieId) {
+        matched = m;
+        break;
+      }
+    }
+
+    if (matched != null) {
+      _openDetail(matched);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('මෙම title එකේ විස්තර දැනට load වී නැත.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _openTrailer(Movie movie) async {
@@ -1425,10 +1475,16 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: items.length,
             separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, index) => SizedBox(
-              width: 118,
-              child: _MovieCard(movie: items[index]),
-            ),
+            itemBuilder: (context, index) {
+              final movie = items[index];
+              return SizedBox(
+                width: 118,
+                child: _MovieCard(
+                  movie: movie,
+                  onTap: () => _openDetail(movie),
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -1775,6 +1831,49 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               onPressed: _showAuraNoticePopup,
                             ),
+                            const SizedBox(width: 2),
+                            IconButton(
+                              tooltip:
+                                  _isUserLoggedIn ? 'My Profile' : 'Sign In',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 36, minHeight: 36),
+                              icon: _isUserLoggedIn && _userInitial != null
+                                  ? CircleAvatar(
+                                      radius: 13,
+                                      backgroundColor: glass.primaryAccent,
+                                      child: Text(
+                                        _userInitial!,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      _isUserLoggedIn
+                                          ? Icons.account_circle_rounded
+                                          : Icons.account_circle_outlined,
+                                      color: _isUserLoggedIn
+                                          ? glass.primaryAccent
+                                          : glass.textPrimary,
+                                      size: 23,
+                                    ),
+                              onPressed: () async {
+                                final result = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const UserAuthScreen(),
+                                  ),
+                                );
+                                if (!mounted) return;
+                                await _refreshUserAuthState();
+                                if (result is WatchHistoryItem) {
+                                  _handleContinueWatchingTap(result);
+                                }
+                              },
+                                                          ),
                             if (kDebugMode)
                               IconButton(
                                 tooltip: 'Admin',
@@ -1853,6 +1952,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 else ...[
                   if (!_isInSpecificCategory && !hasSearchQuery) ...[
                     SliverToBoxAdapter(child: _buildHeroCarousel(glass)),
+                    SliverToBoxAdapter(
+                      child: ContinueWatchingSection(
+                        refreshKey: _historyRefreshKey,
+                        onTapItem: _handleContinueWatchingTap,
+                      ),
+                    ),
                     SliverToBoxAdapter(
                       child: _buildHorizontalSection(
                           'New on AuraCinema', _latestMovies, glass),
@@ -1972,8 +2077,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           mainAxisSpacing: 16,
                         ),
                         delegate: SliverChildBuilderDelegate(
-                          (context, index) =>
-                              _MovieCard(movie: pagedMovies[index]),
+                          (context, index) {
+                            final movie = pagedMovies[index];
+                            return _MovieCard(
+                              movie: movie,
+                              onTap: () => _openDetail(movie),
+                            );
+                          },
                           childCount: pagedMovies.length,
                         ),
                       ),
@@ -1983,12 +2093,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ],
-                // Floating Bottom Navigation Bar එකට යටින් ඉඩ තබන්න
                 const SliverToBoxAdapter(child: SizedBox(height: 105)),
               ],
             ),
           ),
-          // Floating Rounded Bottom Navigation Bar (img2 Style)
           Positioned(
             left: 0,
             right: 0,
@@ -2270,7 +2378,9 @@ class _IncompleteMovieCardState extends State<_IncompleteMovieCard> {
 
 class _MovieCard extends StatefulWidget {
   final Movie movie;
-  const _MovieCard({required this.movie});
+  final VoidCallback? onTap;
+
+  const _MovieCard({required this.movie, this.onTap});
 
   @override
   State<_MovieCard> createState() => _MovieCardState();
@@ -2287,14 +2397,15 @@ class _MovieCardState extends State<_MovieCard> {
       onTapDown: (_) => setState(() => _isPressed = true),
       onTapUp: (_) => setState(() => _isPressed = false),
       onTapCancel: () => setState(() => _isPressed = false),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => MovieDetailScreen(movie: widget.movie),
-          ),
-        );
-      },
+      onTap: widget.onTap ??
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MovieDetailScreen(movie: widget.movie),
+              ),
+            );
+          },
       child: AnimatedScale(
         scale: _isPressed ? 0.95 : 1.0,
         duration: const Duration(milliseconds: 120),
